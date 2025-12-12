@@ -1,3 +1,6 @@
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 import { createClient } from "@supabase/supabase-js";
 
 const supabase = createClient(
@@ -10,16 +13,23 @@ export default async function LighterPage({
 }: {
   params: { id: string };
 }) {
-  // 👇 THIS is the whole point
-  await supabase.from("taps").insert({
+  const { error } = await supabase.from("taps").insert({
     lighter_id: params.id,
   });
 
   return (
     <main style={{ padding: 40 }}>
-      <h1>Where’s My Lighter</h1>
-      <p>Lighter ID:</p>
-      <pre>{params.id}</pre>
+      <h1>🔥 Where’s My Lighter?</h1>
+      <p><b>Lighter ID:</b> {params.id}</p>
+
+      {error ? (
+        <>
+          <p style={{ color: "crimson" }}><b>Supabase insert FAILED:</b></p>
+          <pre>{JSON.stringify(error, null, 2)}</pre>
+        </>
+      ) : (
+        <p><b>✅ Tap inserted into database.</b></p>
+      )}
     </main>
   );
 }
