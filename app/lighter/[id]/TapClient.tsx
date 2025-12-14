@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 
 const supabase = createClient(
@@ -15,152 +15,266 @@ type TapRow = {
   lat: number | null;
   lng: number | null;
   accuracy_m: number | null;
+  place_label: string | null;
 };
 
+type LighterRow = {
+  id: string;
+  name: string;
+  avatar_seed: string;
+  mood: string;
+  level: number;
+  xp: number;
+  tap_count: number;
+  total_km: number;
+  last_lat: number | null;
+  last_lng: number | null;
+  last_tapped_at: string | null;
+};
+
+function fmtAgo(iso?: string | null) {
+  if (!iso) return "—";
+  const s = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  return `${d}d ago`;
+}
+
 export default function TapClient({ lighterId }: { lighterId: string }) {
-  const [status, setStatus] = useState("Getting location…");
+  const [status, setStatus] = useState<string>("Getting location…");
   const [error, setError] = useState<any>(null);
-  const [latest, setLatest] = useState<TapRow | null>(null);
+  const [lighter, setLighter] = useState<LighterRow | null>(null);
+  const [latestTap, setLatestTap] = useState<TapRow | null>(null);
+  const [timeline, setTimeline] = useState<TapRow[]>([]);
+
+  const heroTitle = useMemo(() => {
+    if (!lighter) return "Loading lighter…";
+    return `${lighter.name} • Lv.${lighter.level} • ${lighter.mood}`;
+  }, [lighter]);
 
   useEffect(() => {
     let cancelled = false;
 
+    async function refreshView() {
+      // Fetch lighter profile + latest tap + timeline
+      const [{ data: l }, { data: t1 }, { data: t10 }] = await Promise.all([
+        supabase.from("lighters").select("*").eq("id", lighterId).maybeSingle(),
+        supabase
+          .from("taps")
+          .select("*")
+          .eq("lighter_id", lighterId)
+          .order("tapped_at", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        supabase
+          .from("taps")
+          .select("*")
+          .eq("lighter_id", lighterId)
+          .order("tapped_at", { ascending: false })
+          .limit(10),
+      ]);
+
+      if (cancelled) return;
+      setLighter((l as any) ?? null);
+      setLatestTap((t1 as any) ?? null);
+      setTimeline(((t10 as any) ?? []) as TapRow[]);
+    }
+
     async function run() {
-      // 1) Get the current latest tap (before we add a new one)
-      const { data: before } = await supabase
-        .from("taps")
-        .select("id,lighter_id,tapped_at,lat,lng,accuracy_m")
-        .eq("lighter_id", lighterId)
-        .order("tapped_at", { ascending: false })
-        .limit(1);
+      setError(null);
 
-      if (!cancelled) setLatest(before?.[0] ?? null);
+      // 1) Get GPS from browser
+      const geo = await new Promise<GeolocationPosition | null>((resolve) => {
+        if (!navigator.geolocation) return resolve(null);
+        navigator.geolocation.getCurrentPosition(
+          (pos) => resolve(pos),
+          () => resolve(null),
+          { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+        );
+      });
 
-      // 2) Ask browser for GPS (this is the “real” tap log)
-      if (!navigator.geolocation) {
-        if (!cancelled) setStatus("No geolocation on this device.");
+      const lat = geo?.coords.latitude ?? null;
+      const lng = geo?.coords.longitude ?? null;
+      const accuracy_m = geo?.coords.accuracy ?? null;
+
+      // 2) Insert tap (this triggers lighter stats update in DB)
+      setStatus("Logging tap…");
+      const { error: insertErr } = await supabase.from("taps").insert({
+        lighter_id: lighterId,
+        lat,
+        lng,
+        accuracy_m,
+        place_label: lat && lng ? "GPS captured" : "No GPS permission",
+        user_agent: typeof navigator !== "undefined" ? navigator.userAgent : null,
+      });
+
+      if (cancelled) return;
+
+      if (insertErr) {
+        setError(insertErr);
+        setStatus("Tap failed.");
         return;
       }
 
-      navigator.geolocation.getCurrentPosition(
-        async (pos) => {
-          if (cancelled) return;
-          setStatus("Recording tap…");
+      setStatus("✅ Tap logged. Updating profile…");
 
-          const payload = {
-            lighter_id: lighterId,
-            lat: pos.coords.latitude,
-            lng: pos.coords.longitude,
-            accuracy_m: pos.coords.accuracy,
-          };
-
-          const { error: insertErr } = await supabase.from("taps").insert(payload);
-
-          if (insertErr) {
-            setError(insertErr);
-            setStatus("Insert failed.");
-            return;
-          }
-
-          // 3) Re-fetch latest so UI updates with new location
-          const { data: after, error: fetchErr } = await supabase
-            .from("taps")
-            .select("id,lighter_id,tapped_at,lat,lng,accuracy_m")
-            .eq("lighter_id", lighterId)
-            .order("tapped_at", { ascending: false })
-            .limit(1);
-
-          if (fetchErr) {
-            setError(fetchErr);
-            setStatus("Inserted, but failed to refresh.");
-            return;
-          }
-
-          setLatest(after?.[0] ?? null);
-          setStatus("✅ Tap recorded with GPS.");
-        },
-        (e) => {
-          if (cancelled) return;
-          setStatus(
-            e.code === 1
-              ? "Location permission denied."
-              : `Location error: ${e.message}`
-          );
-        },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-      );
+      // 3) Refresh view with updated lighter stats + latest tap + timeline
+      await refreshView();
+      setStatus("✅ Done.");
     }
 
     run();
+
     return () => {
       cancelled = true;
     };
   }, [lighterId]);
 
-  const lat = latest?.lat;
-  const lng = latest?.lng;
-
-  // super-simple OSM embed (no libraries)
-  const mapSrc =
-    lat != null && lng != null
-      ? `https://www.openstreetmap.org/export/embed.html?bbox=${lng - 0.05}%2C${lat - 0.05}%2C${lng + 0.05}%2C${lat + 0.05}&layer=mapnik&marker=${lat}%2C${lng}`
-      : null;
-
   return (
-    <div style={{ marginTop: 24 }}>
-      <h2 style={{ marginBottom: 8 }}>Last known tap</h2>
+    <div style={{ maxWidth: 980, margin: "0 auto", padding: 24 }}>
+      {/* HERO / TAMAGOTCHI CARD */}
+      <div
+        style={{
+          borderRadius: 24,
+          padding: 24,
+          background:
+            "radial-gradient(1200px 500px at 20% 0%, rgba(168,85,247,.35), transparent 60%), radial-gradient(900px 500px at 80% 10%, rgba(249,115,22,.25), transparent 55%), rgba(10,10,20,1)",
+          border: "1px solid rgba(255,255,255,.08)",
+          color: "white",
+          boxShadow: "0 20px 60px rgba(0,0,0,.45)",
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+          <div>
+            <div style={{ fontSize: 14, opacity: 0.8 }}>🔥 Where’s My Lighter</div>
+            <h1 style={{ margin: "8px 0 6px", fontSize: 34, letterSpacing: -0.5 }}>
+              {heroTitle}
+            </h1>
+            <div style={{ fontSize: 14, opacity: 0.9 }}>
+              ID: <b>{lighterId}</b> • Last tap: <b>{fmtAgo(lighter?.last_tapped_at)}</b>
+            </div>
+          </div>
 
-      {latest ? (
-        <div style={{ lineHeight: 1.6 }}>
-          <div>
-            <b>Time:</b> {new Date(latest.tapped_at).toLocaleString()}
-          </div>
-          <div>
-            <b>Lat/Lng:</b>{" "}
-            {lat != null && lng != null ? `${lat.toFixed(5)}, ${lng.toFixed(5)}` : "Unknown"}
-          </div>
-          <div>
-            <b>Accuracy:</b>{" "}
-            {latest.accuracy_m != null ? `${Math.round(latest.accuracy_m)}m` : "—"}
-          </div>
-          {lat != null && lng != null && (
-            <div style={{ marginTop: 6 }}>
-              <a
-                href={`https://www.google.com/maps?q=${lat},${lng}`}
-                target="_blank"
-                rel="noreferrer"
+          <div style={{ minWidth: 260 }}>
+            <div style={{ fontSize: 14, opacity: 0.9 }}>Status</div>
+            <div style={{ marginTop: 6, fontWeight: 600 }}>{status}</div>
+            {error && (
+              <pre
+                style={{
+                  marginTop: 10,
+                  padding: 12,
+                  borderRadius: 12,
+                  background: "rgba(220,38,38,.12)",
+                  border: "1px solid rgba(220,38,38,.25)",
+                  overflowX: "auto",
+                  whiteSpace: "pre-wrap",
+                }}
               >
-                Open in Google Maps
-              </a>
+                {JSON.stringify(error, null, 2)}
+              </pre>
+            )}
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: 12, marginTop: 18, flexWrap: "wrap" }}>
+          <Stat label="Level" value={lighter ? `Lv. ${lighter.level}` : "—"} />
+          <Stat label="XP" value={lighter ? `${lighter.xp}` : "—"} />
+          <Stat label="Taps" value={lighter ? `${lighter.tap_count}` : "—"} />
+          <Stat label="Travelled" value={lighter ? `${lighter.total_km.toFixed(1)} km` : "—"} />
+          <Stat label="Mood" value={lighter ? `${lighter.mood}` : "—"} />
+        </div>
+      </div>
+
+      {/* MAP PLACEHOLDER (next step we swap this for a real map embed) */}
+      <div
+        style={{
+          marginTop: 18,
+          borderRadius: 18,
+          padding: 18,
+          border: "1px solid rgba(0,0,0,.08)",
+          background: "white",
+        }}
+      >
+        <h2 style={{ margin: 0, fontSize: 18 }}>🗺️ Last known location</h2>
+        <div style={{ marginTop: 10, opacity: 0.9 }}>
+          {latestTap?.lat && latestTap?.lng ? (
+            <>
+              <div>
+                Lat/Lng: <b>{latestTap.lat.toFixed(5)}</b>, <b>{latestTap.lng.toFixed(5)}</b>
+              </div>
+              <div>Accuracy: <b>{latestTap.accuracy_m?.toFixed(0) ?? "—"}m</b></div>
+              <div style={{ marginTop: 10, opacity: 0.8 }}>
+                (Next step: we render an actual map here + pin + route.)
+              </div>
+            </>
+          ) : (
+            <div style={{ marginTop: 8 }}>
+              No GPS recorded yet (either permission denied or first tap). Next tap with location will
+              populate this.
             </div>
           )}
         </div>
-      ) : (
-        <p>No taps yet for this lighter.</p>
-      )}
-
-      {mapSrc && (
-        <div style={{ marginTop: 16 }}>
-          <iframe
-            title="map"
-            src={mapSrc}
-            style={{
-              width: "100%",
-              height: 320,
-              border: "1px solid rgba(0,0,0,0.1)",
-              borderRadius: 12,
-            }}
-          />
-        </div>
-      )}
-
-      <div style={{ marginTop: 18 }}>
-        <h3 style={{ marginBottom: 6 }}>This tap</h3>
-        <p>
-          <b>Status:</b> {status}
-        </p>
-        {error && <pre>{JSON.stringify(error, null, 2)}</pre>}
       </div>
+
+      {/* TIMELINE */}
+      <div style={{ marginTop: 18 }}>
+        <h2 style={{ margin: "0 0 10px", fontSize: 18 }}>📜 Recent taps</h2>
+        <div style={{ display: "grid", gap: 10 }}>
+          {timeline.length === 0 ? (
+            <div style={{ padding: 14, borderRadius: 14, background: "rgba(0,0,0,.04)" }}>
+              No taps yet.
+            </div>
+          ) : (
+            timeline.map((t) => (
+              <div
+                key={t.id}
+                style={{
+                  padding: 14,
+                  borderRadius: 14,
+                  border: "1px solid rgba(0,0,0,.08)",
+                  background: "white",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  flexWrap: "wrap",
+                }}
+              >
+                <div>
+                  <div style={{ fontWeight: 700 }}>{fmtAgo(t.tapped_at)}</div>
+                  <div style={{ fontSize: 13, opacity: 0.8 }}>
+                    {t.lat && t.lng ? `${t.lat.toFixed(4)}, ${t.lng.toFixed(4)}` : "No GPS"}
+                    {t.place_label ? ` • ${t.place_label}` : ""}
+                  </div>
+                </div>
+                <div style={{ fontSize: 13, opacity: 0.7 }}>
+                  {new Date(t.tapped_at).toLocaleString()}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div
+      style={{
+        padding: "10px 12px",
+        borderRadius: 14,
+        background: "rgba(255,255,255,.06)",
+        border: "1px solid rgba(255,255,255,.10)",
+        minWidth: 120,
+      }}
+    >
+      <div style={{ fontSize: 12, opacity: 0.8 }}>{label}</div>
+      <div style={{ fontSize: 16, fontWeight: 800 }}>{value}</div>
     </div>
   );
 }
