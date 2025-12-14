@@ -9,13 +9,13 @@ const supabase = createClient(
 );
 
 type PageProps = {
-  params: Promise<{
+  params: {
     id: string;
-  }>;
+  };
 };
 
 export default async function LighterPage({ params }: PageProps) {
-  const { id } = await params;
+  const { id } = params;
 
   const { error } = await supabase.from("taps").insert({
     lighter_id: id,
