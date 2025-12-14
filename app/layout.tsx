@@ -1,6 +1,17 @@
 export const metadata = {
-  title: "Where’s My Lighter",
-  description: "Track the journey of a lighter via NFC taps",
+  title: "Where’s My Lighter?",
+  description: "Track a lighter’s journey. One tap at a time.",
+  openGraph: {
+    title: "Where’s My Lighter?",
+    description: "Track a lighter’s journey. One tap at a time.",
+    images: ["/og.png"],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Where’s My Lighter?",
+    description: "Track a lighter’s journey. One tap at a time.",
+    images: ["/og.png"],
+  },
 };
 
 export default function RootLayout({
@@ -10,7 +21,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body style={{ margin: 0 }}>{children}</body>
     </html>
   );
 }
