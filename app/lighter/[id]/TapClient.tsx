@@ -1,73 +1,252 @@
-return (
-  <div className="app">
-    <div className="phone">
-      <header className="topbar">
-        <div className="title">LIGHTER</div>
-        <div className="time">{new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
-      </header>
+"use client";
 
-      <section className="card hero">
-        <div className="avatar">🌙</div>
-        <div className="meta">
-          <div><b>Archetype:</b> The Night Traveller</div>
-          <div><b>Pattern:</b> Nocturnal</div>
-          <div><b>Style:</b> Social</div>
-          <div><b>Possession Streak:</b> 07 Days</div>
-          <div><b>Total Losses:</b> 03</div>
-        </div>
-      </section>
+import { useEffect, useState } from "react";
+import { createClient } from "@supabase/supabase-js";
 
-      <section className="card">
-        <h3>Journey (Factual)</h3>
-        <div className="grid2">
-          <div className="pill">First carried in <span className="hot">BERLIN</span></div>
-          <div className="pill">Roamed crowded streets and <span className="hot">SILENT CORNERS</span></div>
-        </div>
-        <div className="pill wide">Last seen outside <span className="hot">BERGHAIN</span> at 5:04am</div>
-      </section>
-
-      <section className="card">
-        <h3>Campfire Story (Legend)</h3>
-        <div className="pill wide">⭐ It leaves a spark of curiosity wherever it travels.</div>
-      </section>
-
-      <section className="card">
-        <h3>ACTIONS</h3>
-        <div className="actions">
-          <button className="btn">☺︎ PROFILE</button>
-          <button className="btn">⚑ LOCATION</button>
-          <button className="btn">♥ SOCIAL</button>
-          <button className="btn">◎ PING</button>
-        </div>
-      </section>
-
-      <nav className="tabs">
-        <div className="tab">HOME</div>
-        <div className="tab active">LIGHTER</div>
-        <div className="tab">SETTINGS</div>
-      </nav>
-    </div>
-
-    <style jsx>{`
-      .app{min-height:100vh;display:flex;align-items:center;justify-content:center;background:#070716;padding:24px}
-      .phone{width:390px;max-width:92vw;border-radius:26px;overflow:hidden;background:linear-gradient(180deg,#0b1f3a 0%, #0a0920 45%, #050515 100%);box-shadow:0 30px 80px rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.08)}
-      .topbar{display:flex;justify-content:space-between;align-items:center;padding:18px 18px 14px;color:#eaf2ff;background:rgba(10,25,50,.55)}
-      .title{font-weight:800;letter-spacing:.6px}
-      .time{opacity:.85;font-weight:700}
-      .card{margin:14px 16px;padding:16px;border-radius:18px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);color:#eaf2ff}
-      .hero{display:flex;gap:14px;align-items:center}
-      .avatar{width:64px;height:64px;border-radius:18px;display:flex;align-items:center;justify-content:center;background:rgba(40,90,255,.15);font-size:30px}
-      .meta{font-size:14px;line-height:1.55;opacity:.95}
-      h3{margin:0 0 10px;font-size:16px;color:#a9c6ff;letter-spacing:.3px}
-      .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
-      .pill{padding:14px;border-radius:14px;background:rgba(110,40,255,.35);border:1px solid rgba(180,120,255,.25);font-weight:700}
-      .pill.wide{width:100%;text-align:center}
-      .hot{color:#ff2d7a}
-      .actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-      .btn{padding:14px 12px;border-radius:14px;border:1px solid rgba(180,120,255,.25);background:rgba(110,40,255,.45);color:#fff;font-weight:900;letter-spacing:.3px}
-      .tabs{display:flex;justify-content:space-around;padding:14px 12px;color:#cfe0ff;background:rgba(10,25,50,.65);border-top:1px solid rgba(255,255,255,.08)}
-      .tab{opacity:.75;font-weight:900}
-      .tab.active{opacity:1;text-decoration:underline;text-underline-offset:8px}
-    `}</style>
-  </div>
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
+
+type Tap = {
+  tapped_at: string;
+  lat: number | null;
+  lng: number | null;
+};
+
+type Lighter = {
+  id: string;
+  name: string;
+  tap_count: number;
+};
+
+export default function TapClient({ lighterId }: { lighterId: string }) {
+  const [status, setStatus] = useState("initialising…");
+  const [error, setError] = useState<any>(null);
+  const [latestTap, setLatestTap] = useState<Tap | null>(null);
+  const [lighter, setLighter] = useState<Lighter | null>(null);
+
+  // ─────────────────────────────────────────────
+  // Log tap + geolocation
+  // ─────────────────────────────────────────────
+  useEffect(() => {
+    if (!lighterId) return;
+
+    const logTap = async () => {
+      try {
+        setStatus("requesting location…");
+
+        const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, {
+            enableHighAccuracy: true,
+            timeout: 10000,
+          });
+        });
+
+        const { latitude, longitude, accuracy } = pos.coords;
+
+        setStatus("saving tap…");
+
+        await supabase.from("taps").insert({
+          lighter_id: lighterId,
+          lat: latitude,
+          lng: longitude,
+          accuracy,
+          user_agent: navigator.userAgent,
+        });
+
+        await supabase
+          .from("lighters")
+          .update({ tap_count: supabase.rpc("increment", { x: 1 }) })
+          .eq("id", lighterId);
+
+        setStatus("tap recorded");
+      } catch (err) {
+        setError(err);
+        setStatus("error");
+      }
+    };
+
+    logTap();
+  }, [lighterId]);
+
+  // ─────────────────────────────────────────────
+  // Fetch lighter + latest tap
+  // ─────────────────────────────────────────────
+  useEffect(() => {
+    if (!lighterId) return;
+
+    const fetchData = async () => {
+      const { data: lighterData } = await supabase
+        .from("lighters")
+        .select("*")
+        .eq("id", lighterId)
+        .single();
+
+      setLighter(lighterData);
+
+      const { data: tapData } = await supabase
+        .from("taps")
+        .select("tapped_at, lat, lng")
+        .eq("lighter_id", lighterId)
+        .order("tapped_at", { ascending: false })
+        .limit(1)
+        .single();
+
+      setLatestTap(tapData);
+    };
+
+    fetchData();
+  }, [lighterId]);
+
+  const fmtAgo = (ts: string) => {
+    const mins = Math.floor((Date.now() - new Date(ts).getTime()) / 60000);
+    if (mins < 1) return "just now";
+    if (mins < 60) return `${mins} min ago`;
+    const hrs = Math.floor(mins / 60);
+    return `${hrs} hr ago`;
+  };
+
+  return (
+    <div style={styles.stage}>
+      <div style={styles.phone}>
+        {/* Top */}
+        <div style={styles.topBar}>
+          <div>LIGHTER</div>
+          <div>{new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
+        </div>
+
+        <div style={styles.content}>
+          {/* Hero */}
+          <div style={styles.hero}>
+            <div style={styles.avatar}>🌙</div>
+            <div>
+              <div><b>Archetype:</b> The Night Traveller</div>
+              <div><b>Pattern:</b> Nocturnal</div>
+              <div><b>Style:</b> Social</div>
+              <div><b>Possession Streak:</b> 07 Days</div>
+              <div><b>Total Losses:</b> 03</div>
+            </div>
+          </div>
+
+          {/* Journey */}
+          <h3>Journey (Factual)</h3>
+          <div style={styles.card}>First carried in <span style={styles.hot}>BERLIN</span></div>
+          <div style={styles.card}>Roamed crowded streets and <span style={styles.hot}>SILENT CORNERS</span></div>
+          <div style={styles.card}>
+            Last seen{" "}
+            {latestTap?.tapped_at ? (
+              <>
+                {fmtAgo(latestTap.tapped_at)}{" "}
+                {latestTap.lat && (
+                  <>• {latestTap.lat.toFixed(4)}, {latestTap.lng?.toFixed(4)}</>
+                )}
+              </>
+            ) : "—"}
+          </div>
+
+          {/* Legend */}
+          <h3>Campfire Story (Legend)</h3>
+          <div style={styles.card}>
+            ✨ It leaves a spark of curiosity wherever it travels.
+          </div>
+
+          {/* Actions */}
+          <h3>ACTIONS</h3>
+          <div style={styles.actions}>
+            <button style={styles.btn}>PROFILE</button>
+            <button style={styles.btn}>LOCATION</button>
+            <button style={styles.btn}>SOCIAL</button>
+            <button style={styles.btn}>PING</button>
+          </div>
+
+          {/* Debug */}
+          <div style={styles.debug}>
+            <div>Status: {status}</div>
+            <div>Lighter: {lighter?.name ?? "—"} • taps: {lighter?.tap_count ?? "—"}</div>
+            {error && <pre>{JSON.stringify(error, null, 2)}</pre>}
+          </div>
+        </div>
+
+        {/* Bottom */}
+        <div style={styles.bottom}>
+          <div>HOME</div>
+          <div style={{ textDecoration: "underline" }}>LIGHTER</div>
+          <div>SETTINGS</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const styles: Record<string, React.CSSProperties> = {
+  stage: {
+    minHeight: "100vh",
+    display: "grid",
+    placeItems: "center",
+    background: "#070816",
+    padding: 24,
+  },
+  phone: {
+    width: 420,
+    borderRadius: 26,
+    overflow: "hidden",
+    background: "#0b0c22",
+    color: "white",
+  },
+  topBar: {
+    padding: 16,
+    display: "flex",
+    justifyContent: "space-between",
+    background: "#123b5a",
+    fontWeight: 800,
+  },
+  content: { padding: 16 },
+  hero: {
+    display: "flex",
+    gap: 12,
+    padding: 14,
+    borderRadius: 16,
+    background: "#14163a",
+    marginBottom: 16,
+  },
+  avatar: {
+    width: 60,
+    height: 60,
+    borderRadius: 999,
+    background: "#245",
+    display: "grid",
+    placeItems: "center",
+    fontSize: 26,
+  },
+  card: {
+    padding: 14,
+    borderRadius: 14,
+    background: "#5b21b6",
+    marginBottom: 10,
+    fontWeight: 700,
+  },
+  hot: { color: "#ff3b6b", fontWeight: 900 },
+  actions: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: 10,
+  },
+  btn: {
+    padding: 14,
+    borderRadius: 14,
+    background: "#5b21b6",
+    color: "white",
+    fontWeight: 900,
+    border: "none",
+  },
+  bottom: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr 1fr",
+    padding: 16,
+    background: "#123b5a",
+    textAlign: "center",
+    fontWeight: 900,
+  },
+  debug: { marginTop: 16, fontSize: 12, opacity: 0.7 },
+};
