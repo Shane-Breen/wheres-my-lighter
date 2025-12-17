@@ -1,4 +1,6 @@
-export const metadata = {
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
   title: "Where’s My Lighter?",
   description: "Track a lighter’s journey. One tap at a time.",
   openGraph: {
@@ -21,7 +23,17 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body style={{ margin: 0 }}>{children}</body>
+      <body
+        style={{
+          margin: 0,
+          padding: 0,
+          fontFamily: "system-ui, -apple-system, BlinkMacSystemFont",
+          backgroundColor: "#0b0b10",
+          color: "#ffffff",
+        }}
+      >
+        {children}
+      </body>
     </html>
   );
 }
