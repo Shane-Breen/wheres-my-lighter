@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { supabase } from "../../../lib/supabaseClient";
 
 type TapRow = {
@@ -59,14 +59,13 @@ export default function TapClient({ id }: { id: string }) {
 
   const fetchAll = async () => {
     // 1) lighter profile (optional)
-    const { data: lighterRow, error: lighterErr } = await supabase
+    const { data: lighterRow } = await supabase
       .from("lighters")
       .select("id,name,avatar_seed")
       .eq("id", id)
       .maybeSingle();
 
-    if (lighterErr) throw lighterErr;
-    setLighter((lighterRow as LighterRow) ?? null);
+    setLighter((lighterRow as any) ?? null);
 
     // 2) taps
     const { data: tapRows, error: tapErr } = await supabase
@@ -77,7 +76,7 @@ export default function TapClient({ id }: { id: string }) {
       .limit(10);
 
     if (tapErr) throw tapErr;
-    setTaps((tapRows as TapRow[]) ?? []);
+    setTaps((tapRows as any) ?? []);
   };
 
   const insertTap = async (payload: Partial<TapRow>) => {
@@ -242,7 +241,7 @@ export default function TapClient({ id }: { id: string }) {
             </button>
           </div>
 
-          {/* Recent taps list (tiny, but real) */}
+          {/* Recent taps list */}
           <div style={styles.listCard}>
             <div style={styles.listTitle}>Recent taps</div>
             {taps.length === 0 ? (
@@ -251,7 +250,9 @@ export default function TapClient({ id }: { id: string }) {
               taps.map((t) => (
                 <div key={t.id} style={styles.listRow}>
                   <span style={{ fontWeight: 800 }}>{formatWhen(t.tapped_at)}</span>
-                  <span style={{ opacity: 0.8 }}>{t.lat && t.lng ? `GPS ±${Math.round(t.accuracy_m ?? 0)}m` : "No GPS"}</span>
+                  <span style={{ opacity: 0.8 }}>
+                    {t.lat && t.lng ? `GPS ±${Math.round(t.accuracy_m ?? 0)}m` : "No GPS"}
+                  </span>
                 </div>
               ))
             )}
