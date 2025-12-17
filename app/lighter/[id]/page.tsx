@@ -1,6 +1,10 @@
 import TapClient from "./TapClient";
 
-export default function Page({ params }: any) {
-  const id = params?.id as string;
+type PageProps = {
+  params: Promise<{ id: string }>;
+};
+
+export default async function Page({ params }: PageProps) {
+  const { id } = await params;
   return <TapClient id={id} />;
 }
