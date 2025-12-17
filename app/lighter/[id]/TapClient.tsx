@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
+import { supabase } from "../../../lib/supabaseClient";
 
 type TapRow = {
   id: string;
@@ -59,13 +59,14 @@ export default function TapClient({ id }: { id: string }) {
 
   const fetchAll = async () => {
     // 1) lighter profile (optional)
-    const { data: lighterRow } = await supabase
+    const { data: lighterRow, error: lighterErr } = await supabase
       .from("lighters")
       .select("id,name,avatar_seed")
       .eq("id", id)
       .maybeSingle();
 
-    setLighter((lighterRow as any) ?? null);
+    if (lighterErr) throw lighterErr;
+    setLighter((lighterRow as LighterRow) ?? null);
 
     // 2) taps
     const { data: tapRows, error: tapErr } = await supabase
@@ -76,7 +77,7 @@ export default function TapClient({ id }: { id: string }) {
       .limit(10);
 
     if (tapErr) throw tapErr;
-    setTaps((tapRows as any) ?? []);
+    setTaps((tapRows as TapRow[]) ?? []);
   };
 
   const insertTap = async (payload: Partial<TapRow>) => {
@@ -225,7 +226,11 @@ export default function TapClient({ id }: { id: string }) {
           <SectionTitle>ACTIONS</SectionTitle>
           <div style={styles.actionsGrid}>
             <ActionButton label="PROFILE" icon="☺" onClick={() => copy(id)} />
-            <ActionButton label="LOCATION" icon="⚑" onClick={() => copy(lastTap?.lat ? `${lastTap.lat},${lastTap.lng}` : "No GPS")} />
+            <ActionButton
+              label="LOCATION"
+              icon="⚑"
+              onClick={() => copy(lastTap?.lat ? `${lastTap.lat},${lastTap.lng}` : "No GPS")}
+            />
             <ActionButton label="SOCIAL" icon="♥" onClick={() => copy(shareUrl)} />
             <ActionButton label="PING" icon="◎" onClick={() => fetchAll()} />
           </div>
@@ -246,9 +251,7 @@ export default function TapClient({ id }: { id: string }) {
               taps.map((t) => (
                 <div key={t.id} style={styles.listRow}>
                   <span style={{ fontWeight: 800 }}>{formatWhen(t.tapped_at)}</span>
-                  <span style={{ opacity: 0.8 }}>
-                    {t.lat && t.lng ? `GPS ±${Math.round(t.accuracy_m ?? 0)}m` : "No GPS"}
-                  </span>
+                  <span style={{ opacity: 0.8 }}>{t.lat && t.lng ? `GPS ±${Math.round(t.accuracy_m ?? 0)}m` : "No GPS"}</span>
                 </div>
               ))
             )}
