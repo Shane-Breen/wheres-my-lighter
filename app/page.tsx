@@ -1,56 +1,119 @@
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-
 export default function Home() {
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        display: "grid",
-        placeItems: "center",
-        padding: 24,
-        background:
-          "radial-gradient(900px 500px at 15% 10%, rgba(168,85,247,.28), transparent 60%), radial-gradient(800px 450px at 85% 0%, rgba(249,115,22,.20), transparent 55%), #070712",
-        color: "white",
-        fontFamily: "system-ui",
-      }}
-    >
-      <div style={{ maxWidth: 900, width: "100%" }}>
-        <div style={{ opacity: 0.85, fontSize: 14 }}>🔥 Where’s My Lighter</div>
+    <main style={styles.wrapper}>
+      <div style={styles.container}>
+        <p style={styles.kicker}>🔥 Where’s My Lighter</p>
 
-        <h1 style={{ fontSize: 52, lineHeight: 1.05, margin: "10px 0 10px" }}>
-          Track a lighter’s journey.
+        <h1 style={styles.title}>
+          Track a lighter&apos;s journey.
           <br />
           One tap at a time.
         </h1>
 
-        <p style={{ opacity: 0.85, fontSize: 18, maxWidth: 680 }}>
-          Tap the NFC lighter to log the moment. See the last known location, recent taps,
-          and the lighter profile evolve over time.
+        <p style={styles.subtitle}>
+          Tap the NFC lighter to log the moment. See the last known location,
+          recent taps, and the <em>tamagotchi-style</em> lighter profile evolve
+          over time.
         </p>
 
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 18 }}>
-          <a
-            href="/lighter/test-999"
-            style={{
-              display: "inline-block",
-              padding: "12px 16px",
-              borderRadius: 12,
-              background: "rgba(255,255,255,.12)",
-              border: "1px solid rgba(255,255,255,.18)",
-              color: "white",
-              textDecoration: "none",
-              fontWeight: 700,
-            }}
-          >
+        <div style={styles.buttons}>
+          <a href="/lighter/demo" style={styles.primaryBtn}>
             Open demo lighter →
           </a>
+
+          <button
+            style={styles.secondaryBtn}
+            onClick={() =>
+              navigator.share?.({
+                title: "Where’s My Lighter",
+                text: "Track a lighter’s journey, one tap at a time",
+                url: window.location.href,
+              })
+            }
+          >
+            Share with partners
+          </button>
         </div>
 
-        <div style={{ marginTop: 22, opacity: 0.7, fontSize: 13 }}>
-          Tip: NFC tag should point to <b>/lighter/&lt;ID&gt;</b>
-        </div>
+        <p style={styles.tip}>
+          Tip: Your NFC tag should point to{" "}
+          <code>/lighter/&lt;ID&gt;</code>
+        </p>
       </div>
     </main>
   );
 }
+
+const styles: Record<string, React.CSSProperties> = {
+  wrapper: {
+    minHeight: "100vh",
+    background:
+      "radial-gradient(1200px 800px at 10% 10%, #3b1c5a, #09040f 60%)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "24px",
+    color: "#fff",
+    fontFamily:
+      "-apple-system, BlinkMacSystemFont, Inter, Segoe UI, sans-serif",
+  },
+
+  container: {
+    maxWidth: "420px",
+    width: "100%",
+  },
+
+  kicker: {
+    opacity: 0.85,
+    fontSize: "14px",
+    marginBottom: "16px",
+  },
+
+  title: {
+    fontSize: "42px",
+    lineHeight: "1.1",
+    fontWeight: 800,
+    marginBottom: "20px",
+  },
+
+  subtitle: {
+    fontSize: "16px",
+    lineHeight: "1.6",
+    opacity: 0.9,
+    marginBottom: "32px",
+  },
+
+  buttons: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "14px",
+    marginBottom: "24px",
+  },
+
+  primaryBtn: {
+    background: "rgba(255,255,255,0.12)",
+    border: "1px solid rgba(255,255,255,0.2)",
+    padding: "14px 18px",
+    borderRadius: "14px",
+    fontSize: "16px",
+    color: "#fff",
+    textDecoration: "none",
+    textAlign: "center",
+    backdropFilter: "blur(6px)",
+  },
+
+  secondaryBtn: {
+    background: "linear-gradient(135deg, #3a200f, #6b3a1c)",
+    border: "none",
+    padding: "14px 18px",
+    borderRadius: "14px",
+    fontSize: "16px",
+    color: "#fff",
+    cursor: "pointer",
+  },
+
+  tip: {
+    fontSize: "13px",
+    opacity: 0.6,
+  },
+};
