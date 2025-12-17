@@ -1,10 +1,14 @@
+"use client";
+
+import { useMemo } from "react";
+
 export default function LighterPage({ params }: any) {
   const id = params?.id as string;
 
-  const nfcUrl =
-    typeof window !== "undefined"
-      ? `${window.location.origin}/lighter/${id}`
-      : `/lighter/${id}`;
+  const nfcUrl = useMemo(() => {
+    if (typeof window === "undefined") return `/lighter/${id}`;
+    return `${window.location.origin}/lighter/${id}`;
+  }, [id]);
 
   return (
     <main
@@ -63,11 +67,7 @@ export default function LighterPage({ params }: any) {
           </button>
 
           <button
-            onClick={() =>
-              navigator.clipboard.writeText(
-                `${window.location.origin}/lighter/${id}`
-              )
-            }
+            onClick={() => navigator.clipboard.writeText(nfcUrl)}
             style={{
               cursor: "pointer",
               padding: "12px 14px",
@@ -82,13 +82,7 @@ export default function LighterPage({ params }: any) {
           </button>
         </div>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr",
-            gap: 14,
-          }}
-        >
+        <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 14 }}>
           <section
             style={{
               padding: 16,
