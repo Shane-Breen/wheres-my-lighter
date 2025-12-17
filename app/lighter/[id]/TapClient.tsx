@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
-import { supabase } from "../../../lib/supabaseClient";
+import { useEffect, useMemo, useState } from "react";
+import { supabase } from "@/lib/supabaseClient";
 
 type TapRow = {
   id: string;
@@ -57,17 +57,37 @@ export default function TapClient({ id }: { id: string }) {
     return `${hh}:${mm}`;
   };
 
-  const fetchAll = async () => {
-    // 1) lighter profile (optional)
-    const { data: lighterRow } = await supabase
+  const ensureLighterExists = async () => {
+    // if it exists, do nothing; if not, create it
+    const { data: existing, error: checkErr } = await supabase
       .from("lighters")
       .select("id,name,avatar_seed")
       .eq("id", id)
       .maybeSingle();
 
+    if (checkErr) throw checkErr;
+    if (existing) return existing as any;
+
+    const { data: created, error: createErr } = await supabase
+      .from("lighters")
+      .insert({ id, name: `Lighter ${id}`, avatar_seed: "moon-01" })
+      .select("id,name,avatar_seed")
+      .single();
+
+    if (createErr) throw createErr;
+    return created as any;
+  };
+
+  const fetchAll = async () => {
+    const { data: lighterRow, error: lErr } = await supabase
+      .from("lighters")
+      .select("id,name,avatar_seed")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (lErr) throw lErr;
     setLighter((lighterRow as any) ?? null);
 
-    // 2) taps
     const { data: tapRows, error: tapErr } = await supabase
       .from("taps")
       .select("id,lighter_id,tapped_at,lat,lng,accuracy_m")
@@ -89,7 +109,7 @@ export default function TapClient({ id }: { id: string }) {
     if (error) throw error;
   };
 
-  // MAIN: on first load => log tap => fetch data
+  // MAIN: on first load => ensure lighter => log tap => fetch data
   useEffect(() => {
     let cancelled = false;
 
@@ -98,7 +118,8 @@ export default function TapClient({ id }: { id: string }) {
         setStatus("logging");
         setErr("");
 
-        // try to get location, but don't block if denied/slow
+        await ensureLighterExists();
+
         const loc = await new Promise<{ lat?: number; lng?: number; accuracy_m?: number }>((resolve) => {
           if (!navigator.geolocation) return resolve({});
           navigator.geolocation.getCurrentPosition(
@@ -135,7 +156,6 @@ export default function TapClient({ id }: { id: string }) {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   const lastTap = taps?.[0];
@@ -150,14 +170,12 @@ export default function TapClient({ id }: { id: string }) {
         </div>
 
         <div style={styles.content}>
-          {/* status */}
           {status !== "ready" ? (
             <div style={styles.statusPill}>
               {status === "logging" ? "Logging tap…" : status === "error" ? `Error: ${err}` : "Loading…"}
             </div>
           ) : null}
 
-          {/* Archetype card */}
           <div style={styles.card}>
             <div style={styles.row}>
               <div style={styles.avatar}>
@@ -189,7 +207,7 @@ export default function TapClient({ id }: { id: string }) {
               icon="≋"
               text={
                 <>
-                  Profile: <Hot>{lighter?.name ?? "Unknown"}</Hot>
+                  Profile: <Hot>{lighter?.name ?? `Lighter ${id}`}</Hot>
                 </>
               }
             />
@@ -201,14 +219,14 @@ export default function TapClient({ id }: { id: string }) {
               text={
                 lastTap ? (
                   <>
-                    Last seen at <Hot>{formatWhen(lastTap.tapped_at)}</Hot>{" "}
+                    Last seen at <Hot>{formatWhen(lastTap.tapped_at)}</Hot> ·{" "}
                     {lastTap.lat && lastTap.lng ? (
                       <>
-                        · <Hot>GPS</Hot> (±{Math.round(lastTap.accuracy_m ?? 0)}m)
+                        <Hot>GPS</Hot> (+{Math.round(lastTap.accuracy_m ?? 0)}m)
                       </>
                     ) : (
                       <>
-                        · <Hot>NO GPS</Hot>
+                        <Hot>NO GPS</Hot>
                       </>
                     )}
                   </>
@@ -232,30 +250,6 @@ export default function TapClient({ id }: { id: string }) {
             />
             <ActionButton label="SOCIAL" icon="♥" onClick={() => copy(shareUrl)} />
             <ActionButton label="PING" icon="◎" onClick={() => fetchAll()} />
-          </div>
-
-          <div style={styles.devHint}>
-            NFC URL:{" "}
-            <button style={styles.linkBtn} onClick={() => copy(shareUrl)}>
-              Copy link
-            </button>
-          </div>
-
-          {/* Recent taps list */}
-          <div style={styles.listCard}>
-            <div style={styles.listTitle}>Recent taps</div>
-            {taps.length === 0 ? (
-              <div style={styles.listRow}>No taps recorded.</div>
-            ) : (
-              taps.map((t) => (
-                <div key={t.id} style={styles.listRow}>
-                  <span style={{ fontWeight: 800 }}>{formatWhen(t.tapped_at)}</span>
-                  <span style={{ opacity: 0.8 }}>
-                    {t.lat && t.lng ? `GPS ±${Math.round(t.accuracy_m ?? 0)}m` : "No GPS"}
-                  </span>
-                </div>
-              ))
-            )}
           </div>
         </div>
 
@@ -496,39 +490,6 @@ const styles: Record<string, any> = {
   },
   actionIcon: { fontSize: 18, opacity: 0.95 },
   actionLabel: { letterSpacing: 0.5 },
-
-  devHint: {
-    marginTop: 12,
-    fontSize: 12,
-    opacity: 0.7,
-    display: "flex",
-    gap: 8,
-    flexWrap: "wrap",
-    alignItems: "center",
-  },
-  linkBtn: {
-    background: "transparent",
-    border: "none",
-    color: "rgba(210,220,255,0.95)",
-    textDecoration: "underline",
-    cursor: "pointer",
-    fontWeight: 800,
-  },
-
-  listCard: {
-    marginTop: 14,
-    borderRadius: 18,
-    padding: 14,
-    background: "rgba(12, 18, 44, 0.55)",
-    border: "1px solid rgba(255,255,255,0.08)",
-  },
-  listTitle: { fontWeight: 900, opacity: 0.9, marginBottom: 10 },
-  listRow: {
-    display: "flex",
-    justifyContent: "space-between",
-    padding: "8px 0",
-    borderTop: "1px solid rgba(255,255,255,0.06)",
-  },
 
   bottomNav: {
     height: 74,
