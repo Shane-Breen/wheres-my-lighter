@@ -1,8 +1,4 @@
-export default function LighterPage({
-  params,
-}: {
-  params: { id: string };
-}) {
+export default function LighterPage({ params }: any) {
   return (
     <div
       style={{
@@ -14,7 +10,7 @@ export default function LighterPage({
         fontFamily: "system-ui",
       }}
     >
-      🔥 LIGHTER PAGE WORKS: {params.id}
+      🔥 LIGHTER PAGE WORKS: {params?.id}
     </div>
   );
 }
