@@ -1,20 +1,18 @@
-export default function LighterPage({
-  params,
-}: {
-  params: { id: string };
-}) {
+export default function Home() {
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        fontSize: "32px",
-        fontFamily: "system-ui",
-      }}
-    >
-      🔥 LIGHTER PAGE WORKS: {params.id}
-    </div>
+    <main style={{ padding: 40, fontFamily: "system-ui" }}>
+      <h1>Where’s My Lighter?</h1>
+      <p>This is the home page.</p>
+
+      <p>
+        Test pages:
+        {" "}
+        <a href="/route-check">/route-check</a>
+        {" "}
+        •
+        {" "}
+        <a href="/lighter/test-001">/lighter/test-001</a>
+      </p>
+    </main>
   );
 }
