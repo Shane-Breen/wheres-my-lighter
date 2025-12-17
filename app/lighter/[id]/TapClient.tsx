@@ -1,196 +1,73 @@
-"use client";
+return (
+  <div className="app">
+    <div className="phone">
+      <header className="topbar">
+        <div className="title">LIGHTER</div>
+        <div className="time">{new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
+      </header>
 
-import { useEffect, useState } from "react";
-import { createClient } from "@supabase/supabase-js";
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
-
-type Tap = {
-  id: string;
-  tapped_at: string;
-  lat: number | null;
-  lng: number | null;
-  accuracy_m: number | null;
-};
-
-type Lighter = {
-  id: string;
-  name: string;
-  mood: string;
-  level: number;
-  xp: number;
-  tap_count: number;
-  total_km: number;
-  last_lat: number | null;
-  last_lng: number | null;
-  last_tapped_at: string | null;
-};
-
-function timeAgo(date?: string | null) {
-  if (!date) return "—";
-  const diff = Math.floor((Date.now() - new Date(date).getTime()) / 1000);
-  if (diff < 60) return `${diff}s ago`;
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  return `${Math.floor(diff / 86400)}d ago`;
-}
-
-export default function TapClient({ lighterId }: { lighterId: string }) {
-  const [status, setStatus] = useState("Getting location…");
-  const [lighter, setLighter] = useState<Lighter | null>(null);
-  const [latestTap, setLatestTap] = useState<Tap | null>(null);
-  const [timeline, setTimeline] = useState<Tap[]>([]);
-  const [error, setError] = useState<any>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function logTap() {
-      setError(null);
-
-      const geo = await new Promise<GeolocationPosition | null>((resolve) => {
-        if (!navigator.geolocation) return resolve(null);
-        navigator.geolocation.getCurrentPosition(
-          (pos) => resolve(pos),
-          () => resolve(null),
-          { enableHighAccuracy: true, timeout: 8000 }
-        );
-      });
-
-      const lat = geo?.coords.latitude ?? null;
-      const lng = geo?.coords.longitude ?? null;
-      const accuracy_m = geo?.coords.accuracy ?? null;
-
-      setStatus("Logging tap…");
-
-      const { error } = await supabase.from("taps").insert({
-        lighter_id: lighterId,
-        lat,
-        lng,
-        accuracy_m,
-      });
-
-      if (error) {
-        setError(error);
-        setStatus("Tap failed");
-        return;
-      }
-
-      setStatus("Tap logged");
-
-      const [{ data: l }, { data: t1 }, { data: t10 }] = await Promise.all([
-        supabase.from("lighters").select("*").eq("id", lighterId).maybeSingle(),
-        supabase
-          .from("taps")
-          .select("*")
-          .eq("lighter_id", lighterId)
-          .order("tapped_at", { ascending: false })
-          .limit(1)
-          .maybeSingle(),
-        supabase
-          .from("taps")
-          .select("*")
-          .eq("lighter_id", lighterId)
-          .order("tapped_at", { ascending: false })
-          .limit(10),
-      ]);
-
-      if (cancelled) return;
-
-      setLighter(l ?? null);
-      setLatestTap(t1 ?? null);
-      setTimeline(t10 ?? []);
-      setStatus("Done");
-    }
-
-    logTap();
-    return () => {
-      cancelled = true;
-    };
-  }, [lighterId]);
-
-  return (
-    <div style={{ maxWidth: 900, margin: "0 auto", padding: 24 }}>
-      {/* HERO */}
-      <div
-        style={{
-          borderRadius: 24,
-          padding: 24,
-          background:
-            "radial-gradient(800px 400px at 20% 0%, rgba(168,85,247,.35), transparent 60%), radial-gradient(800px 400px at 80% 10%, rgba(249,115,22,.25), transparent 55%), #0a0a14",
-          color: "white",
-          boxShadow: "0 30px 80px rgba(0,0,0,.5)",
-        }}
-      >
-        <div style={{ fontSize: 14, opacity: 0.8 }}>🔥 Where’s My Lighter</div>
-        <h1 style={{ margin: "8px 0" }}>
-          {lighter?.name ?? "Unknown Lighter"} • Lv.{lighter?.level ?? 1}
-        </h1>
-        <div style={{ opacity: 0.9 }}>
-          Mood: <b>{lighter?.mood ?? "😴 idle"}</b> • Last seen{" "}
-          <b>{timeAgo(lighter?.last_tapped_at)}</b>
+      <section className="card hero">
+        <div className="avatar">🌙</div>
+        <div className="meta">
+          <div><b>Archetype:</b> The Night Traveller</div>
+          <div><b>Pattern:</b> Nocturnal</div>
+          <div><b>Style:</b> Social</div>
+          <div><b>Possession Streak:</b> 07 Days</div>
+          <div><b>Total Losses:</b> 03</div>
         </div>
+      </section>
 
-        <div style={{ marginTop: 12, fontWeight: 600 }}>{status}</div>
+      <section className="card">
+        <h3>Journey (Factual)</h3>
+        <div className="grid2">
+          <div className="pill">First carried in <span className="hot">BERLIN</span></div>
+          <div className="pill">Roamed crowded streets and <span className="hot">SILENT CORNERS</span></div>
+        </div>
+        <div className="pill wide">Last seen outside <span className="hot">BERGHAIN</span> at 5:04am</div>
+      </section>
 
-        {error && (
-          <pre
-            style={{
-              marginTop: 12,
-              padding: 12,
-              background: "rgba(255,0,0,.15)",
-              borderRadius: 12,
-              fontSize: 12,
-            }}
-          >
-            {JSON.stringify(error, null, 2)}
-          </pre>
-        )}
-      </div>
+      <section className="card">
+        <h3>Campfire Story (Legend)</h3>
+        <div className="pill wide">⭐ It leaves a spark of curiosity wherever it travels.</div>
+      </section>
 
-      {/* MAP */}
-      <div style={{ marginTop: 20 }}>
-        <h2>🗺️ Last known location</h2>
+      <section className="card">
+        <h3>ACTIONS</h3>
+        <div className="actions">
+          <button className="btn">☺︎ PROFILE</button>
+          <button className="btn">⚑ LOCATION</button>
+          <button className="btn">♥ SOCIAL</button>
+          <button className="btn">◎ PING</button>
+        </div>
+      </section>
 
-        {latestTap?.lat && latestTap?.lng ? (
-          <iframe
-            width="100%"
-            height="340"
-            style={{ borderRadius: 16, border: "1px solid #ddd" }}
-            loading="lazy"
-            src={`https://www.openstreetmap.org/export/embed.html?marker=${latestTap.lat},${latestTap.lng}&zoom=12`}
-          />
-        ) : (
-          <p>No location yet — allow GPS and tap again.</p>
-        )}
-      </div>
-
-      {/* TIMELINE */}
-      <div style={{ marginTop: 20 }}>
-        <h2>📜 Recent taps</h2>
-        {timeline.length === 0 && <p>No taps yet.</p>}
-
-        {timeline.map((t) => (
-          <div
-            key={t.id}
-            style={{
-              padding: 14,
-              marginBottom: 8,
-              borderRadius: 12,
-              border: "1px solid #ddd",
-              background: "#fff",
-            }}
-          >
-            <b>{timeAgo(t.tapped_at)}</b>
-            <div style={{ fontSize: 13, opacity: 0.7 }}>
-              {t.lat && t.lng ? `${t.lat.toFixed(4)}, ${t.lng.toFixed(4)}` : "No GPS"}
-            </div>
-          </div>
-        ))}
-      </div>
+      <nav className="tabs">
+        <div className="tab">HOME</div>
+        <div className="tab active">LIGHTER</div>
+        <div className="tab">SETTINGS</div>
+      </nav>
     </div>
-  );
-}
+
+    <style jsx>{`
+      .app{min-height:100vh;display:flex;align-items:center;justify-content:center;background:#070716;padding:24px}
+      .phone{width:390px;max-width:92vw;border-radius:26px;overflow:hidden;background:linear-gradient(180deg,#0b1f3a 0%, #0a0920 45%, #050515 100%);box-shadow:0 30px 80px rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.08)}
+      .topbar{display:flex;justify-content:space-between;align-items:center;padding:18px 18px 14px;color:#eaf2ff;background:rgba(10,25,50,.55)}
+      .title{font-weight:800;letter-spacing:.6px}
+      .time{opacity:.85;font-weight:700}
+      .card{margin:14px 16px;padding:16px;border-radius:18px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);color:#eaf2ff}
+      .hero{display:flex;gap:14px;align-items:center}
+      .avatar{width:64px;height:64px;border-radius:18px;display:flex;align-items:center;justify-content:center;background:rgba(40,90,255,.15);font-size:30px}
+      .meta{font-size:14px;line-height:1.55;opacity:.95}
+      h3{margin:0 0 10px;font-size:16px;color:#a9c6ff;letter-spacing:.3px}
+      .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+      .pill{padding:14px;border-radius:14px;background:rgba(110,40,255,.35);border:1px solid rgba(180,120,255,.25);font-weight:700}
+      .pill.wide{width:100%;text-align:center}
+      .hot{color:#ff2d7a}
+      .actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+      .btn{padding:14px 12px;border-radius:14px;border:1px solid rgba(180,120,255,.25);background:rgba(110,40,255,.45);color:#fff;font-weight:900;letter-spacing:.3px}
+      .tabs{display:flex;justify-content:space-around;padding:14px 12px;color:#cfe0ff;background:rgba(10,25,50,.65);border-top:1px solid rgba(255,255,255,.08)}
+      .tab{opacity:.75;font-weight:900}
+      .tab.active{opacity:1;text-decoration:underline;text-underline-offset:8px}
+    `}</style>
+  </div>
+);
