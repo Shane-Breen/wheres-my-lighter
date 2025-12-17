@@ -1,18 +1,20 @@
-export default function Home() {
+export default function LighterPage({
+  params,
+}: {
+  params: { id: string };
+}) {
   return (
-    <main style={{ padding: 40, fontFamily: "system-ui" }}>
-      <h1>Where’s My Lighter</h1>
-      <p>Home page is working.</p>
-
-      <p>
-        Try:
-        {" "}
-        <a href="/route-check">/route-check</a>
-        {" "}
-        and
-        {" "}
-        <a href="/lighter/test-001">/lighter/test-001</a>
-      </p>
-    </main>
+    <div
+      style={{
+        minHeight: "100vh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontSize: "32px",
+        fontFamily: "system-ui",
+      }}
+    >
+      🔥 LIGHTER PAGE WORKS: {params.id}
+    </div>
   );
 }
