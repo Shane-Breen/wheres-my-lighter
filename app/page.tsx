@@ -1,11 +1,15 @@
-import TapClient from "./TapClient";
+export default function Home() {
+  return (
+    <main style={{ padding: 40, fontFamily: "system-ui" }}>
+      <h1>Where’s My Lighter?</h1>
+      <p>This is the home page.</p>
 
-export default async function Page({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const { id } = await params;
-
-  return <TapClient lighterId={id} />;
+      <p>
+        Test pages:{" "}
+        <a href="/route-check">/route-check</a> •{" "}
+        <a href="/lighter/test-001">/lighter/test-001</a> •{" "}
+        <a href="/lighter/pilot-002?demo=1">/lighter/pilot-002?demo=1</a>
+      </p>
+    </main>
+  );
 }
