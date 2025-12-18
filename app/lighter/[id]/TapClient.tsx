@@ -7,13 +7,16 @@ export default function TapClient() {
   const [saved, setSaved] = React.useState(false)
 
   const onTap = () => {
-    // Demo-safe: no database calls
     setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
+    setTimeout(() => setSaved(false), 1800)
   }
 
   return (
-    <div className="mt-4">
+    <div className="mt-5 rounded-2xl bg-white/5 p-3 ring-1 ring-white/10">
+      <div className="mb-3 text-xs font-semibold tracking-wide text-white/60">
+        TAP CLIENT (DEMO MODE — NO SUPABASE)
+      </div>
+
       <motion.button
         onClick={onTap}
         whileTap={{ scale: 0.97 }}
