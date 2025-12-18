@@ -38,7 +38,6 @@ export default function TapClient({ id }: { id: string }) {
   const [taps, setTaps] = useState<TapRow[]>([]);
   const [place, setPlace] = useState<Place | null>(null);
 
-  // top-right clock
   useEffect(() => {
     const tick = () => {
       const d = new Date();
@@ -69,18 +68,11 @@ export default function TapClient({ id }: { id: string }) {
     return `${hh}:${mm}`;
   };
 
-  // Reverse geocode using Nominatim.
-  // NOTE: "town accuracy to 1km" is enforced by *display logic*:
-  // we only show the town when accuracy_m <= 1000.
   const lookupPlace = async (lat: number, lng: number) => {
     try {
       const res = await fetch(
         `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&zoom=14`,
-        {
-          headers: {
-            "Accept-Language": "en",
-          },
-        }
+        { headers: { "Accept-Language": "en" } }
       );
       const json = await res.json();
       setPlace(json.address ?? null);
@@ -90,7 +82,6 @@ export default function TapClient({ id }: { id: string }) {
   };
 
   const fetchAll = async () => {
-    // 1) lighter profile (optional)
     const { data: lighterRow } = await supabase
       .from("lighters")
       .select("id,name,avatar_seed")
@@ -99,7 +90,6 @@ export default function TapClient({ id }: { id: string }) {
 
     setLighter((lighterRow as any) ?? null);
 
-    // 2) taps
     const { data: tapRows, error: tapErr } = await supabase
       .from("taps")
       .select("id,lighter_id,tapped_at,lat,lng,accuracy_m")
@@ -128,7 +118,6 @@ export default function TapClient({ id }: { id: string }) {
     if (error) throw error;
   };
 
-  // MAIN: on first load => log tap => fetch data
   useEffect(() => {
     let cancelled = false;
 
@@ -177,7 +166,6 @@ export default function TapClient({ id }: { id: string }) {
 
   const lastTap = taps?.[0];
 
-  // --- Town + country with 1km rule ---
   const country = place?.country;
   const town =
     place?.town ||
@@ -194,12 +182,10 @@ export default function TapClient({ id }: { id: string }) {
   const locationLabel = (() => {
     if (!country && !town) return "Location unknown";
     if (isWithin1km) {
-      // show town + country only if GPS accuracy is within 1km
       if (town && country) return `${town}, ${country}`;
       if (town) return `${town}`;
       return `${country}`;
     }
-    // otherwise: hide town, show only country (privacy + accuracy)
     if (country) return `Nearby (approx), ${country}`;
     return "Nearby (approx)";
   })();
@@ -289,8 +275,6 @@ export default function TapClient({ id }: { id: string }) {
   );
 }
 
-/** ---------- UI pieces ---------- */
-
 function Line({ label, value }: { label: string; value: string }) {
   return (
     <div style={styles.line}>
@@ -326,15 +310,7 @@ function WideCard({ icon, text }: { icon: string; text: React.ReactNode }) {
   );
 }
 
-function ActionButton({
-  label,
-  icon,
-  onClick,
-}: {
-  label: string;
-  icon: string;
-  onClick: () => void;
-}) {
+function ActionButton({ label, icon, onClick }: { label: string; icon: string; onClick: () => void }) {
   return (
     <button onClick={onClick} style={styles.actionBtn}>
       <span style={styles.actionIcon}>{icon}</span>
@@ -342,8 +318,6 @@ function ActionButton({
     </button>
   );
 }
-
-/** ---------- Styles ---------- */
 
 const styles: Record<string, any> = {
   screen: {
@@ -357,7 +331,6 @@ const styles: Record<string, any> = {
     fontFamily: "system-ui",
     color: "white",
   },
-
   phone: {
     width: 390,
     maxWidth: "92vw",
@@ -367,7 +340,6 @@ const styles: Record<string, any> = {
     boxShadow: "0 30px 90px rgba(0,0,0,0.55)",
     border: "1px solid rgba(255,255,255,0.08)",
   },
-
   topBar: {
     height: 70,
     padding: "0 18px",
@@ -378,13 +350,10 @@ const styles: Record<string, any> = {
   },
   topTitle: { fontSize: 26, fontWeight: 900, letterSpacing: 0.5 },
   topTime: { fontSize: 22, fontWeight: 800, opacity: 0.95 },
-
   content: {
     padding: 18,
-    background:
-      "radial-gradient(700px 300px at 20% 10%, rgba(255,255,255,0.06), transparent 60%), rgba(10, 12, 28, 0.35)",
+    background: "radial-gradient(700px 300px at 20% 10%, rgba(255,255,255,0.06), transparent 60%), rgba(10, 12, 28, 0.35)",
   },
-
   statusPill: {
     marginBottom: 12,
     borderRadius: 999,
@@ -394,7 +363,6 @@ const styles: Record<string, any> = {
     fontWeight: 800,
     fontSize: 14,
   },
-
   card: {
     borderRadius: 22,
     padding: 16,
@@ -403,7 +371,6 @@ const styles: Record<string, any> = {
     boxShadow: "0 10px 24px rgba(0,0,0,0.25)",
   },
   row: { display: "flex", gap: 14, alignItems: "center" },
-
   avatar: {
     width: 88,
     height: 88,
@@ -414,21 +381,11 @@ const styles: Record<string, any> = {
     justifyContent: "center",
   },
   moon: { fontSize: 44, transform: "translateY(1px)" },
-
   line: { fontSize: 20, lineHeight: 1.25, marginBottom: 6 },
   lineLabel: { fontWeight: 900, opacity: 0.95 },
   lineValue: { fontWeight: 500, opacity: 0.95 },
-
-  sectionTitle: {
-    marginTop: 18,
-    marginBottom: 10,
-    fontSize: 22,
-    fontWeight: 900,
-    color: "rgba(170, 200, 255, 0.9)",
-  },
-
+  sectionTitle: { marginTop: 18, marginBottom: 10, fontSize: 22, fontWeight: 900, color: "rgba(170, 200, 255, 0.9)" },
   grid2: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 },
-
   purpleCard: {
     height: 108,
     borderRadius: 18,
@@ -441,7 +398,6 @@ const styles: Record<string, any> = {
     justifyContent: "center",
     gap: 10,
   },
-
   purpleCardWide: {
     borderRadius: 18,
     padding: 16,
@@ -454,34 +410,10 @@ const styles: Record<string, any> = {
     gap: 10,
     minHeight: 92,
   },
-
-  icon: {
-    fontSize: 28,
-    fontWeight: 900,
-    opacity: 0.95,
-    textAlign: "center",
-  },
-
-  purpleText: {
-    fontSize: 20,
-    textAlign: "center",
-    color: "rgba(240,240,255,0.95)",
-    lineHeight: 1.15,
-    fontWeight: 600,
-  },
-
-  hot: {
-    color: "#ff3b6a",
-    fontWeight: 900,
-    letterSpacing: 0.5,
-  },
-
-  actionsGrid: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: 12,
-  },
-
+  icon: { fontSize: 28, fontWeight: 900, opacity: 0.95, textAlign: "center" },
+  purpleText: { fontSize: 20, textAlign: "center", color: "rgba(240,240,255,0.95)", lineHeight: 1.15, fontWeight: 600 },
+  hot: { color: "#ff3b6a", fontWeight: 900, letterSpacing: 0.5 },
+  actionsGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 },
   actionBtn: {
     borderRadius: 18,
     padding: "16px 14px",
