@@ -22,6 +22,10 @@ type Place = {
   town?: string;
   city?: string;
   village?: string;
+  hamlet?: string;
+  suburb?: string;
+  county?: string;
+  state?: string;
   country?: string;
 };
 
@@ -34,13 +38,13 @@ export default function TapClient({ id }: { id: string }) {
   const [taps, setTaps] = useState<TapRow[]>([]);
   const [place, setPlace] = useState<Place | null>(null);
 
-  /* ---------- clock ---------- */
+  // top-right clock
   useEffect(() => {
     const tick = () => {
       const d = new Date();
-      setTime(
-        `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`
-      );
+      const hh = String(d.getHours()).padStart(2, "0");
+      const mm = String(d.getMinutes()).padStart(2, "0");
+      setTime(`${hh}:${mm}`);
     };
     tick();
     const t = setInterval(tick, 10_000);
@@ -60,15 +64,23 @@ export default function TapClient({ id }: { id: string }) {
 
   const formatWhen = (iso: string) => {
     const d = new Date(iso);
-    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mm = String(d.getMinutes()).padStart(2, "0");
+    return `${hh}:${mm}`;
   };
 
-  /* ---------- reverse geocode ---------- */
+  // Reverse geocode using Nominatim.
+  // NOTE: "town accuracy to 1km" is enforced by *display logic*:
+  // we only show the town when accuracy_m <= 1000.
   const lookupPlace = async (lat: number, lng: number) => {
     try {
       const res = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`,
-        { headers: { "Accept-Language": "en" } }
+        `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&zoom=14`,
+        {
+          headers: {
+            "Accept-Language": "en",
+          },
+        }
       );
       const json = await res.json();
       setPlace(json.address ?? null);
@@ -77,8 +89,8 @@ export default function TapClient({ id }: { id: string }) {
     }
   };
 
-  /* ---------- data ---------- */
   const fetchAll = async () => {
+    // 1) lighter profile (optional)
     const { data: lighterRow } = await supabase
       .from("lighters")
       .select("id,name,avatar_seed")
@@ -87,18 +99,22 @@ export default function TapClient({ id }: { id: string }) {
 
     setLighter((lighterRow as any) ?? null);
 
-    const { data: tapRows } = await supabase
+    // 2) taps
+    const { data: tapRows, error: tapErr } = await supabase
       .from("taps")
       .select("id,lighter_id,tapped_at,lat,lng,accuracy_m")
       .eq("lighter_id", id)
       .order("tapped_at", { ascending: false })
       .limit(10);
 
+    if (tapErr) throw tapErr;
     setTaps((tapRows as any) ?? []);
 
-    const last = tapRows?.[0];
-    if (last?.lat && last?.lng) {
-      lookupPlace(last.lat, last.lng);
+    const last = tapRows?.[0] as any as TapRow | undefined;
+    if (last?.lat != null && last?.lng != null) {
+      await lookupPlace(last.lat, last.lng);
+    } else {
+      setPlace(null);
     }
   };
 
@@ -112,7 +128,7 @@ export default function TapClient({ id }: { id: string }) {
     if (error) throw error;
   };
 
-  /* ---------- main ---------- */
+  // MAIN: on first load => log tap => fetch data
   useEffect(() => {
     let cancelled = false;
 
@@ -121,23 +137,26 @@ export default function TapClient({ id }: { id: string }) {
         setStatus("logging");
         setErr("");
 
-        const loc = await new Promise<{ lat?: number; lng?: number; accuracy_m?: number }>(
-          (resolve) => {
-            if (!navigator.geolocation) return resolve({});
-            navigator.geolocation.getCurrentPosition(
-              (pos) =>
-                resolve({
-                  lat: pos.coords.latitude,
-                  lng: pos.coords.longitude,
-                  accuracy_m: pos.coords.accuracy,
-                }),
-              () => resolve({}),
-              { enableHighAccuracy: true, timeout: 4500, maximumAge: 15000 }
-            );
-          }
-        );
+        const loc = await new Promise<{ lat?: number; lng?: number; accuracy_m?: number }>((resolve) => {
+          if (!navigator.geolocation) return resolve({});
+          navigator.geolocation.getCurrentPosition(
+            (pos) =>
+              resolve({
+                lat: pos.coords.latitude,
+                lng: pos.coords.longitude,
+                accuracy_m: pos.coords.accuracy,
+              }),
+            () => resolve({}),
+            { enableHighAccuracy: true, timeout: 4500, maximumAge: 15000 }
+          );
+        });
 
-        await insertTap(loc);
+        await insertTap({
+          lat: typeof loc.lat === "number" ? loc.lat : null,
+          lng: typeof loc.lng === "number" ? loc.lng : null,
+          accuracy_m: typeof loc.accuracy_m === "number" ? loc.accuracy_m : null,
+        });
+
         if (!cancelled) {
           await fetchAll();
           setStatus("ready");
@@ -156,11 +175,34 @@ export default function TapClient({ id }: { id: string }) {
     };
   }, [id]);
 
-  const lastTap = taps[0];
+  const lastTap = taps?.[0];
 
-  const placeLabel = place
-    ? `${place.city || place.town || place.village || "Unknown"}, ${place.country || ""}`
-    : "Location unknown";
+  // --- Town + country with 1km rule ---
+  const country = place?.country;
+  const town =
+    place?.town ||
+    place?.city ||
+    place?.village ||
+    place?.hamlet ||
+    place?.suburb ||
+    place?.county ||
+    place?.state;
+
+  const accuracy = lastTap?.accuracy_m ?? null;
+  const isWithin1km = typeof accuracy === "number" && accuracy <= 1000;
+
+  const locationLabel = (() => {
+    if (!country && !town) return "Location unknown";
+    if (isWithin1km) {
+      // show town + country only if GPS accuracy is within 1km
+      if (town && country) return `${town}, ${country}`;
+      if (town) return `${town}`;
+      return `${country}`;
+    }
+    // otherwise: hide town, show only country (privacy + accuracy)
+    if (country) return `Nearby (approx), ${country}`;
+    return "Nearby (approx)";
+  })();
 
   return (
     <div style={styles.screen}>
@@ -171,15 +213,18 @@ export default function TapClient({ id }: { id: string }) {
         </div>
 
         <div style={styles.content}>
-          {status !== "ready" && (
+          {status !== "ready" ? (
             <div style={styles.statusPill}>
-              {status === "logging" ? "Logging tap…" : status === "error" ? err : "Loading…"}
+              {status === "logging" ? "Logging tap…" : status === "error" ? `Error: ${err}` : "Loading…"}
             </div>
-          )}
+          ) : null}
 
           <div style={styles.card}>
             <div style={styles.row}>
-              <div style={styles.avatar}>🌙</div>
+              <div style={styles.avatar}>
+                <span style={styles.moon}>🌙</span>
+              </div>
+
               <div style={{ flex: 1 }}>
                 <Line label="Archetype" value="The Night Traveller" />
                 <Line label="Pattern" value="Nocturnal" />
@@ -193,8 +238,22 @@ export default function TapClient({ id }: { id: string }) {
           <SectionTitle>Journey (Factual)</SectionTitle>
 
           <div style={styles.grid2}>
-            <MiniCard icon="▢" text={<>Lighter ID: <Hot>{id}</Hot></>} />
-            <MiniCard icon="≋" text={<>Profile: <Hot>{lighter?.name ?? "Unknown"}</Hot></>} />
+            <MiniCard
+              icon="▢"
+              text={
+                <>
+                  Lighter ID: <Hot>{id}</Hot>
+                </>
+              }
+            />
+            <MiniCard
+              icon="≋"
+              text={
+                <>
+                  Profile: <Hot>{lighter?.name ?? "Unknown"}</Hot>
+                </>
+              }
+            />
           </div>
 
           <div style={{ marginTop: 12 }}>
@@ -205,7 +264,7 @@ export default function TapClient({ id }: { id: string }) {
                   <>
                     Last seen at <Hot>{formatWhen(lastTap.tapped_at)}</Hot>
                     <br />
-                    <Hot>{placeLabel}</Hot>
+                    <Hot>{locationLabel}</Hot>
                   </>
                 ) : (
                   <>No taps yet.</>
@@ -220,7 +279,7 @@ export default function TapClient({ id }: { id: string }) {
           <SectionTitle>ACTIONS</SectionTitle>
           <div style={styles.actionsGrid}>
             <ActionButton label="PROFILE" icon="☺" onClick={() => copy(id)} />
-            <ActionButton label="LOCATION" icon="⚑" onClick={() => copy(placeLabel)} />
+            <ActionButton label="LOCATION" icon="⚑" onClick={() => copy(locationLabel)} />
             <ActionButton label="SOCIAL" icon="♥" onClick={() => copy(shareUrl)} />
             <ActionButton label="PING" icon="◎" onClick={() => fetchAll()} />
           </div>
@@ -230,12 +289,13 @@ export default function TapClient({ id }: { id: string }) {
   );
 }
 
-/* ---------- UI helpers ---------- */
+/** ---------- UI pieces ---------- */
 
 function Line({ label, value }: { label: string; value: string }) {
   return (
     <div style={styles.line}>
-      <strong>{label}:</strong> {value}
+      <span style={styles.lineLabel}>{label}:</span>{" "}
+      <span style={styles.lineValue}>{value}</span>
     </div>
   );
 }
@@ -249,40 +309,194 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 }
 
 function MiniCard({ icon, text }: { icon: string; text: React.ReactNode }) {
-  return <div style={styles.purpleCard}>{icon} {text}</div>;
+  return (
+    <div style={styles.purpleCard}>
+      <div style={styles.icon}>{icon}</div>
+      <div style={styles.purpleText}>{text}</div>
+    </div>
+  );
 }
 
 function WideCard({ icon, text }: { icon: string; text: React.ReactNode }) {
-  return <div style={styles.purpleCardWide}>{icon} {text}</div>;
+  return (
+    <div style={styles.purpleCardWide}>
+      <div style={styles.icon}>{icon}</div>
+      <div style={styles.purpleText}>{text}</div>
+    </div>
+  );
 }
 
-function ActionButton({ label, icon, onClick }: any) {
+function ActionButton({
+  label,
+  icon,
+  onClick,
+}: {
+  label: string;
+  icon: string;
+  onClick: () => void;
+}) {
   return (
     <button onClick={onClick} style={styles.actionBtn}>
-      {icon} {label}
+      <span style={styles.actionIcon}>{icon}</span>
+      <span style={styles.actionLabel}>{label}</span>
     </button>
   );
 }
 
-/* ---------- styles ---------- */
+/** ---------- Styles ---------- */
 
 const styles: Record<string, any> = {
-  screen: { minHeight: "100vh", display: "flex", justifyContent: "center", background: "#070711", color: "white" },
-  phone: { width: 390, background: "#0b0f2a", borderRadius: 28, overflow: "hidden" },
-  topBar: { padding: 16, display: "flex", justifyContent: "space-between", background: "#1a3c6b" },
-  topTitle: { fontWeight: 900, fontSize: 24 },
-  topTime: { fontWeight: 800, fontSize: 20 },
-  content: { padding: 16 },
-  statusPill: { marginBottom: 12 },
-  card: { padding: 16, borderRadius: 18, background: "#121a3a" },
-  row: { display: "flex", gap: 12 },
-  avatar: { fontSize: 42 },
-  line: { marginBottom: 6 },
-  sectionTitle: { marginTop: 18, fontWeight: 900 },
+  screen: {
+    minHeight: "100vh",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background:
+      "radial-gradient(900px 600px at 30% 20%, rgba(130,80,255,0.25), transparent 60%), radial-gradient(900px 600px at 80% 10%, rgba(255,120,80,0.18), transparent 55%), #070711",
+    padding: 18,
+    fontFamily: "system-ui",
+    color: "white",
+  },
+
+  phone: {
+    width: 390,
+    maxWidth: "92vw",
+    borderRadius: 28,
+    overflow: "hidden",
+    background: "rgba(25, 35, 70, 0.92)",
+    boxShadow: "0 30px 90px rgba(0,0,0,0.55)",
+    border: "1px solid rgba(255,255,255,0.08)",
+  },
+
+  topBar: {
+    height: 70,
+    padding: "0 18px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    background: "rgba(25, 70, 120, 0.85)",
+  },
+  topTitle: { fontSize: 26, fontWeight: 900, letterSpacing: 0.5 },
+  topTime: { fontSize: 22, fontWeight: 800, opacity: 0.95 },
+
+  content: {
+    padding: 18,
+    background:
+      "radial-gradient(700px 300px at 20% 10%, rgba(255,255,255,0.06), transparent 60%), rgba(10, 12, 28, 0.35)",
+  },
+
+  statusPill: {
+    marginBottom: 12,
+    borderRadius: 999,
+    padding: "10px 12px",
+    background: "rgba(255,255,255,0.08)",
+    border: "1px solid rgba(255,255,255,0.08)",
+    fontWeight: 800,
+    fontSize: 14,
+  },
+
+  card: {
+    borderRadius: 22,
+    padding: 16,
+    background: "rgba(12, 18, 44, 0.65)",
+    border: "1px solid rgba(255,255,255,0.08)",
+    boxShadow: "0 10px 24px rgba(0,0,0,0.25)",
+  },
+  row: { display: "flex", gap: 14, alignItems: "center" },
+
+  avatar: {
+    width: 88,
+    height: 88,
+    borderRadius: 999,
+    background: "rgba(20, 70, 120, 0.7)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  moon: { fontSize: 44, transform: "translateY(1px)" },
+
+  line: { fontSize: 20, lineHeight: 1.25, marginBottom: 6 },
+  lineLabel: { fontWeight: 900, opacity: 0.95 },
+  lineValue: { fontWeight: 500, opacity: 0.95 },
+
+  sectionTitle: {
+    marginTop: 18,
+    marginBottom: 10,
+    fontSize: 22,
+    fontWeight: 900,
+    color: "rgba(170, 200, 255, 0.9)",
+  },
+
   grid2: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 },
-  purpleCard: { padding: 14, borderRadius: 14, background: "#5a1ec9" },
-  purpleCardWide: { padding: 16, borderRadius: 14, background: "#5a1ec9" },
-  hot: { color: "#ff3b6a", fontWeight: 900 },
-  actionsGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 },
-  actionBtn: { padding: 14, borderRadius: 14, background: "#6b2bd9", color: "white", border: "none" },
+
+  purpleCard: {
+    height: 108,
+    borderRadius: 18,
+    padding: 14,
+    background: "linear-gradient(180deg, rgba(110,20,210,0.95), rgba(80,10,180,0.95))",
+    boxShadow: "0 14px 24px rgba(0,0,0,0.28)",
+    border: "1px solid rgba(255,255,255,0.06)",
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: "center",
+    gap: 10,
+  },
+
+  purpleCardWide: {
+    borderRadius: 18,
+    padding: 16,
+    background: "linear-gradient(180deg, rgba(110,20,210,0.95), rgba(80,10,180,0.95))",
+    boxShadow: "0 14px 24px rgba(0,0,0,0.28)",
+    border: "1px solid rgba(255,255,255,0.06)",
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: "center",
+    gap: 10,
+    minHeight: 92,
+  },
+
+  icon: {
+    fontSize: 28,
+    fontWeight: 900,
+    opacity: 0.95,
+    textAlign: "center",
+  },
+
+  purpleText: {
+    fontSize: 20,
+    textAlign: "center",
+    color: "rgba(240,240,255,0.95)",
+    lineHeight: 1.15,
+    fontWeight: 600,
+  },
+
+  hot: {
+    color: "#ff3b6a",
+    fontWeight: 900,
+    letterSpacing: 0.5,
+  },
+
+  actionsGrid: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: 12,
+  },
+
+  actionBtn: {
+    borderRadius: 18,
+    padding: "16px 14px",
+    background: "rgba(90, 10, 190, 0.9)",
+    border: "1px solid rgba(255,255,255,0.06)",
+    color: "white",
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    fontWeight: 900,
+    fontSize: 18,
+    boxShadow: "0 14px 24px rgba(0,0,0,0.25)",
+  },
+  actionIcon: { fontSize: 18, opacity: 0.95 },
+  actionLabel: { letterSpacing: 0.5 },
 };
