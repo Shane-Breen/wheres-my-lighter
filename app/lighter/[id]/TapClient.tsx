@@ -1,29 +1,69 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { getSupabase } from "@/lib/supabaseClient";
 
-export default function TapClient() {
-  const supabase = useMemo(() => getSupabase(), []);
-  const [status, setStatus] = useState("");
+type Props = {
+  lighterId: string;
+  onLogged?: (city: string) => void;
+};
 
-  async function onTap() {
-    if (!supabase) {
-      setStatus("Demo mode: Supabase not configured yet.");
-      return;
+export default function TapClient({ lighterId, onLogged }: Props) {
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+
+  async function logTap() {
+    setBusy(true);
+    setStatus(null);
+
+    try {
+      let city = "Unknown Location";
+
+      if (navigator.geolocation) {
+        const pos = await new Promise<GeolocationPosition | null>((resolve) =>
+          navigator.geolocation.getCurrentPosition(
+            (p) => resolve(p),
+            () => resolve(null),
+            { timeout: 6000 }
+          )
+        );
+
+        if (pos) {
+          city = `Lat ${pos.coords.latitude.toFixed(
+            3
+          )}, Lng ${pos.coords.longitude.toFixed(3)}`;
+        }
+      }
+
+      const supabase = getSupabase();
+      if (supabase) {
+        await supabase.from("taps").insert({
+          lighter_id: lighterId,
+          city
+        });
+      }
+
+      onLogged?.(city);
+      setStatus("Tap logged ✓");
+    } catch {
+      setStatus("Tap failed");
+    } finally {
+      setBusy(false);
     }
-    setStatus("Connected ✅ (next: write tap event)");
   }
 
   return (
-    <div className="mt-6">
+    <div className="mt-3">
       <button
-        onClick={onTap}
-        className="w-full rounded-xl bg-purple-700 py-3 font-semibold text-white"
+        onClick={logTap}
+        disabled={busy}
+        className="w-full rounded-2xl bg-purple-600 py-3 font-semibold disabled:opacity-60"
       >
-        Log Tap
+        {busy ? "Logging…" : "LOG TAP"}
       </button>
-      {status ? <p className="mt-3 text-sm opacity-80">{status}</p> : null}
+      {status && (
+        <div className="mt-2 text-center text-xs opacity-80">{status}</div>
+      )}
     </div>
   );
 }
