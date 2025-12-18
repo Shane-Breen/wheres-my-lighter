@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { supabase } from "../../../lib/supabaseClient"; // ✅ no @ alias
+import { supabase } from "../../../lib/supabaseClient";
 
 type TapRow = {
   id: string;
@@ -10,7 +10,7 @@ type TapRow = {
   lat: number | null;
   lng: number | null;
   accuracy_m: number | null;
-  device_id: string | null;
+  owner_id: string | null;
 };
 
 type LighterRow = {
@@ -19,53 +19,58 @@ type LighterRow = {
   avatar_seed: string | null;
 };
 
-type GeoLabel = {
-  town?: string;
-  county?: string;
-  country?: string;
+type Place = {
+  town: string | null;
+  county: string | null;
+  country: string | null;
 };
 
-function getOrCreateDeviceId() {
-  if (typeof window === "undefined") return "server";
-  const key = "wml_device_id";
+function roundToApprox1km(n: number) {
+  // ~0.01° ≈ 1.1km (good “closest 1km” privacy-friendly rounding)
+  return Math.round(n * 100) / 100;
+}
+
+function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
+  const R = 6371;
+  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
+  const dLng = ((b.lng - a.lng) * Math.PI) / 180;
+  const lat1 = (a.lat * Math.PI) / 180;
+  const lat2 = (b.lat * Math.PI) / 180;
+
+  const x =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+
+  return 2 * R * Math.asin(Math.sqrt(x));
+}
+
+function getOrMakeOwnerId() {
+  if (typeof window === "undefined") return null;
+  const key = "wml_owner_id";
   const existing = window.localStorage.getItem(key);
   if (existing) return existing;
 
   const id =
     typeof crypto !== "undefined" && "randomUUID" in crypto
       ? crypto.randomUUID()
-      : `dev_${Math.random().toString(16).slice(2)}_${Date.now()}`;
+      : `anon_${Math.random().toString(16).slice(2)}_${Date.now()}`;
 
   window.localStorage.setItem(key, id);
   return id;
 }
 
-function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
-  const R = 6371;
-  const toRad = (x: number) => (x * Math.PI) / 180;
-  const dLat = toRad(b.lat - a.lat);
-  const dLng = toRad(b.lng - a.lng);
-  const lat1 = toRad(a.lat);
-  const lat2 = toRad(b.lat);
-
-  const s =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1) * Math.cos(lat2) * (Math.sin(dLng / 2) ** 2);
-
-  return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
-}
-
 export default function TapClient({ id }: { id: string }) {
   const [time, setTime] = useState("");
   const [status, setStatus] = useState<"idle" | "logging" | "ready" | "error">("idle");
-  const [err, setErr] = useState("");
+  const [err, setErr] = useState<string>("");
 
   const [lighter, setLighter] = useState<LighterRow | null>(null);
   const [taps, setTaps] = useState<TapRow[]>([]);
-  const [geo, setGeo] = useState<GeoLabel | null>(null);
+  const [place, setPlace] = useState<Place | null>(null);
 
-  const deviceId = useMemo(() => getOrCreateDeviceId(), []);
+  const ownerId = useMemo(() => getOrMakeOwnerId(), []);
 
+  // top-right clock
   useEffect(() => {
     const tick = () => {
       const d = new Date();
@@ -83,60 +88,77 @@ export default function TapClient({ id }: { id: string }) {
     return `${window.location.origin}/lighter/${id}`;
   }, [id]);
 
-  const reverseGeocode = async (lat: number, lng: number) => {
+  const copy = async (text: string) => {
     try {
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=10&addressdetails=1`,
-        { headers: { Accept: "application/json" } }
-      );
-      const data = await res.json();
-      const a = data.address || {};
-      setGeo({
-        town: a.village || a.town || a.city || a.hamlet,
-        county: a.county,
-        country: a.country,
-      });
+      await navigator.clipboard.writeText(text);
+    } catch {}
+  };
+
+  const formatWhen = (iso: string) => {
+    const d = new Date(iso);
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mm = String(d.getMinutes()).padStart(2, "0");
+    return `${hh}:${mm}`;
+  };
+
+  const reverseLookup = async (lat: number, lng: number) => {
+    try {
+      const r = await fetch(`/api/reverse?lat=${lat}&lng=${lng}`, { cache: "no-store" });
+      if (!r.ok) return null;
+      return (await r.json()) as Place;
     } catch {
-      setGeo(null);
+      return null;
     }
   };
 
   const fetchAll = async () => {
+    // 1) lighter profile (optional)
     const { data: lighterRow } = await supabase
       .from("lighters")
       .select("id,name,avatar_seed")
       .eq("id", id)
       .maybeSingle();
 
-    setLighter(lighterRow ?? null);
+    setLighter((lighterRow as any) ?? null);
 
+    // 2) taps (pull more so distance calc is meaningful)
     const { data: tapRows, error: tapErr } = await supabase
       .from("taps")
-      .select("id,lighter_id,tapped_at,lat,lng,accuracy_m,device_id")
+      .select("id,lighter_id,tapped_at,lat,lng,accuracy_m,owner_id")
       .eq("lighter_id", id)
       .order("tapped_at", { ascending: false })
-      .limit(200);
+      .limit(500);
 
     if (tapErr) throw tapErr;
 
-    const rows = (tapRows ?? []) as TapRow[];
+    const rows = ((tapRows as any) ?? []) as TapRow[];
     setTaps(rows);
 
-    const latest = rows?.[0];
-    if (latest?.lat != null && latest?.lng != null) reverseGeocode(latest.lat, latest.lng);
+    // reverse lookup on most recent tap with GPS (rounded to “closest 1km”)
+    const latest = rows[0];
+    if (latest?.lat != null && latest?.lng != null) {
+      const latR = roundToApprox1km(latest.lat);
+      const lngR = roundToApprox1km(latest.lng);
+      const p = await reverseLookup(latR, lngR);
+      setPlace(p);
+    } else {
+      setPlace(null);
+    }
   };
 
-  const insertTap = async (payload: Partial<TapRow>) => {
+  const insertTap = async (payload: { lat: number | null; lng: number | null; accuracy_m: number | null }) => {
     const { error } = await supabase.from("taps").insert({
       lighter_id: id,
-      lat: payload.lat ?? null,
-      lng: payload.lng ?? null,
-      accuracy_m: payload.accuracy_m ?? null,
-      device_id: deviceId,
+      lat: payload.lat,
+      lng: payload.lng,
+      accuracy_m: payload.accuracy_m,
+      owner_id: ownerId ?? null,
     });
+
     if (error) throw error;
   };
 
+  // MAIN: on first load => log tap => fetch data
   useEffect(() => {
     let cancelled = false;
 
@@ -145,21 +167,20 @@ export default function TapClient({ id }: { id: string }) {
         setStatus("logging");
         setErr("");
 
-        const loc = await new Promise<{ lat?: number; lng?: number; accuracy_m?: number }>(
-          (resolve) => {
-            if (!navigator.geolocation) return resolve({});
-            navigator.geolocation.getCurrentPosition(
-              (pos) =>
-                resolve({
-                  lat: pos.coords.latitude,
-                  lng: pos.coords.longitude,
-                  accuracy_m: pos.coords.accuracy,
-                }),
-              () => resolve({}),
-              { enableHighAccuracy: false, timeout: 5000, maximumAge: 30_000 }
-            );
-          }
-        );
+        const loc = await new Promise<{ lat: number | null; lng: number | null; accuracy_m: number | null }>((resolve) => {
+          if (!navigator.geolocation) return resolve({ lat: null, lng: null, accuracy_m: null });
+
+          navigator.geolocation.getCurrentPosition(
+            (pos) =>
+              resolve({
+                lat: pos.coords.latitude,
+                lng: pos.coords.longitude,
+                accuracy_m: pos.coords.accuracy,
+              }),
+            () => resolve({ lat: null, lng: null, accuracy_m: null }),
+            { enableHighAccuracy: true, timeout: 4500, maximumAge: 15000 }
+          );
+        });
 
         await insertTap(loc);
 
@@ -179,31 +200,45 @@ export default function TapClient({ id }: { id: string }) {
     return () => {
       cancelled = true;
     };
-  }, [id, deviceId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
 
-  const ownersUnique = useMemo(() => {
+  const lastTap = taps?.[0];
+  const totalShown = taps.length;
+
+  const ownersCount = useMemo(() => {
     const s = new Set<string>();
-    for (const t of taps) if (t.device_id) s.add(t.device_id);
+    for (const t of taps) if (t.owner_id) s.add(t.owner_id);
     return s.size;
   }, [taps]);
 
   const totalDistanceKm = useMemo(() => {
-    const points = taps
+    const withGps = taps
       .filter((t) => t.lat != null && t.lng != null)
       .slice()
-      .reverse() as Array<TapRow & { lat: number; lng: number }>;
+      .sort((a, b) => new Date(a.tapped_at).getTime() - new Date(b.tapped_at).getTime());
 
-    let sum = 0;
-    for (let i = 1; i < points.length; i++) {
-      sum += haversineKm(
-        { lat: points[i - 1].lat, lng: points[i - 1].lng },
-        { lat: points[i].lat, lng: points[i].lng }
+    let km = 0;
+    for (let i = 1; i < withGps.length; i++) {
+      km += haversineKm(
+        { lat: withGps[i - 1].lat as number, lng: withGps[i - 1].lng as number },
+        { lat: withGps[i].lat as number, lng: withGps[i].lng as number }
       );
     }
-    return sum;
+    return km;
   }, [taps]);
 
-  const lastTap = taps?.[0];
+  const placeLabel = useMemo(() => {
+    if (!place) return null;
+    const parts = [place.town, place.county, place.country].filter(Boolean);
+    return parts.length ? parts.join(", ") : null;
+  }, [place]);
+
+  const approxAccuracyKm = useMemo(() => {
+    const m = lastTap?.accuracy_m ?? null;
+    if (!m) return 1;
+    return Math.max(1, Math.round(m / 1000));
+  }, [lastTap?.accuracy_m]);
 
   return (
     <div style={styles.screen}>
@@ -214,60 +249,200 @@ export default function TapClient({ id }: { id: string }) {
         </div>
 
         <div style={styles.content}>
-          {status !== "ready" && (
+          {status !== "ready" ? (
             <div style={styles.statusPill}>
               {status === "logging" ? "Logging tap…" : status === "error" ? `Error: ${err}` : "Loading…"}
             </div>
-          )}
+          ) : null}
 
           <div style={styles.card}>
             <div style={styles.row}>
-              <div style={styles.avatar}>🌙</div>
+              <div style={styles.avatar}>
+                <span style={styles.moon}>🌙</span>
+              </div>
+
               <div style={{ flex: 1 }}>
-                <div style={styles.line}><b>Archetype:</b> The Night Traveller</div>
-                <div style={styles.line}><b>Total taps (loaded):</b> {taps.length}</div>
-                <div style={styles.line}><b>Unique owners (phones):</b> {ownersUnique}</div>
-                <div style={styles.line}>
-                  <b>Total distance travelled:</b>{" "}
-                  <span style={styles.hot}>{totalDistanceKm.toFixed(1)} km</span>
-                </div>
+                <Line label="Archetype" value="The Night Traveller" />
+                <Line label="Pattern" value="Nocturnal" />
+                <Line label="Style" value="Social" />
+                <Line label="Possession Streak" value="07 Days" />
+                <Line label="Total Taps (shown)" value={`${totalShown}`} />
+                <Line label="Owners (unique phones)" value={`${ownersCount}`} />
+                <Line label="Distance travelled" value={`${totalDistanceKm.toFixed(1)} km`} />
               </div>
             </div>
           </div>
 
-          <div style={styles.card}>
-            <div style={{ opacity: 0.9, marginBottom: 6 }}><b>Last seen:</b></div>
-            <div style={styles.hot}>
-              {geo?.town ? geo.town : "Unknown"}
-              {geo?.county ? `, ${geo.county}` : ""}
-              {geo?.country ? `, ${geo.country}` : ""}
-            </div>
-            <div style={{ marginTop: 8, opacity: 0.75, fontSize: 12 }}>
-              {lastTap?.lat && lastTap?.lng ? "Town/county/country from GPS." : "No GPS for latest tap."}
-            </div>
+          <SectionTitle>Journey (Factual)</SectionTitle>
+
+          <div style={styles.grid2}>
+            <MiniCard
+              icon="▢"
+              text={
+                <>
+                  Lighter ID: <Hot>{id}</Hot>
+                </>
+              }
+            />
+            <MiniCard
+              icon="≋"
+              text={
+                <>
+                  Profile: <Hot>{lighter?.name ?? "Unknown"}</Hot>
+                </>
+              }
+            />
           </div>
 
-          <div style={styles.card}>
-            <button onClick={() => navigator.clipboard.writeText(shareUrl)} style={styles.btn}>
-              Copy NFC Link
-            </button>
-            <button onClick={() => fetchAll()} style={{ ...styles.btn, marginTop: 10, opacity: 0.9 }}>
-              Refresh
-            </button>
-            <div style={{ marginTop: 10, fontSize: 12, opacity: 0.7 }}>
-              Device ID: {deviceId.slice(0, 8)}…
-            </div>
+          <div style={{ marginTop: 12 }}>
+            <WideCard
+              icon="◯"
+              text={
+                lastTap ? (
+                  <>
+                    Last seen at <Hot>{formatWhen(lastTap.tapped_at)}</Hot>
+                    {lastTap.lat != null && lastTap.lng != null ? (
+                      <>
+                        {" "}
+                        · <Hot>{placeLabel ?? "Locating…"}</Hot> · <Hot>±{approxAccuracyKm}km</Hot>
+                      </>
+                    ) : (
+                      <>
+                        {" "}
+                        · <Hot>NO GPS</Hot>
+                      </>
+                    )}
+                  </>
+                ) : (
+                  <>No taps yet.</>
+                )
+              }
+            />
           </div>
+
+          <SectionTitle>Campfire Story (Legend)</SectionTitle>
+          <WideCard icon="☆" text={<>It leaves a spark of curiosity wherever it travels.</>} />
+
+          <SectionTitle>ACTIONS</SectionTitle>
+          <div style={styles.actionsGrid}>
+            <ActionButton label="PROFILE" icon="☺" onClick={() => copy(id)} />
+            <ActionButton
+              label="LOCATION"
+              icon="⚑"
+              onClick={() => copy(placeLabel ?? "No GPS / Unknown")}
+            />
+            <ActionButton label="SOCIAL" icon="♥" onClick={() => copy(shareUrl)} />
+            <ActionButton label="PING" icon="◎" onClick={() => fetchAll()} />
+          </div>
+
+          <div style={styles.devHint}>
+            NFC URL:{" "}
+            <button style={styles.linkBtn} onClick={() => copy(shareUrl)}>
+              Copy link
+            </button>
+          </div>
+
+          <div style={styles.listCard}>
+            <div style={styles.listTitle}>Recent taps</div>
+            {taps.length === 0 ? (
+              <div style={styles.listRow}>No taps recorded.</div>
+            ) : (
+              taps.slice(0, 10).map((t) => (
+                <div key={t.id} style={styles.listRow}>
+                  <span style={{ fontWeight: 800 }}>{formatWhen(t.tapped_at)}</span>
+                  <span style={{ opacity: 0.8 }}>
+                    {t.lat != null && t.lng != null ? `GPS ±${Math.max(1, Math.round((t.accuracy_m ?? 1000) / 1000))}km` : "No GPS"}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        <div style={styles.bottomNav}>
+          <NavItem label="HOME" active={false} onClick={() => (window.location.href = "/")} />
+          <NavItem label="LIGHTER" active={true} onClick={() => {}} />
+          <NavItem label="SETTINGS" active={false} onClick={() => copy("TODO: settings")} />
         </div>
       </div>
     </div>
   );
 }
 
-const styles: any = {
+function Line({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={styles.line}>
+      <span style={styles.lineLabel}>{label}:</span>{" "}
+      <span style={styles.lineValue}>{value}</span>
+    </div>
+  );
+}
+
+function Hot({ children }: { children: React.ReactNode }) {
+  return <span style={styles.hot}>{children}</span>;
+}
+
+function SectionTitle({ children }: { children: React.ReactNode }) {
+  return <div style={styles.sectionTitle}>{children}</div>;
+}
+
+function MiniCard({ icon, text }: { icon: string; text: React.ReactNode }) {
+  return (
+    <div style={styles.purpleCard}>
+      <div style={styles.icon}>{icon}</div>
+      <div style={styles.purpleText}>{text}</div>
+    </div>
+  );
+}
+
+function WideCard({ icon, text }: { icon: string; text: React.ReactNode }) {
+  return (
+    <div style={styles.purpleCardWide}>
+      <div style={styles.icon}>{icon}</div>
+      <div style={styles.purpleText}>{text}</div>
+    </div>
+  );
+}
+
+function ActionButton({
+  label,
+  icon,
+  onClick,
+}: {
+  label: string;
+  icon: string;
+  onClick: () => void;
+}) {
+  return (
+    <button onClick={onClick} style={styles.actionBtn}>
+      <span style={styles.actionIcon}>{icon}</span>
+      <span style={styles.actionLabel}>{label}</span>
+    </button>
+  );
+}
+
+function NavItem({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button onClick={onClick} style={styles.navItem}>
+      <span style={{ ...styles.navLabel, ...(active ? styles.navActive : {}) }}>{label}</span>
+      {active ? <span style={styles.navUnderline} /> : null}
+    </button>
+  );
+}
+
+const styles: Record<string, any> = {
   screen: {
     minHeight: "100vh",
     display: "flex",
+    alignItems: "center",
     justifyContent: "center",
     background:
       "radial-gradient(900px 600px at 30% 20%, rgba(130,80,255,0.25), transparent 60%), radial-gradient(900px 600px at 80% 10%, rgba(255,120,80,0.18), transparent 55%), #070711",
@@ -292,9 +467,13 @@ const styles: any = {
     justifyContent: "space-between",
     background: "rgba(25, 70, 120, 0.85)",
   },
-  topTitle: { fontSize: 26, fontWeight: 900 },
-  topTime: { fontSize: 22, fontWeight: 800 },
-  content: { padding: 18 },
+  topTitle: { fontSize: 26, fontWeight: 900, letterSpacing: 0.5 },
+  topTime: { fontSize: 22, fontWeight: 800, opacity: 0.95 },
+  content: {
+    padding: 18,
+    background:
+      "radial-gradient(700px 300px at 20% 10%, rgba(255,255,255,0.06), transparent 60%), rgba(10, 12, 28, 0.35)",
+  },
   statusPill: {
     marginBottom: 12,
     borderRadius: 999,
@@ -305,33 +484,154 @@ const styles: any = {
     fontSize: 14,
   },
   card: {
-    borderRadius: 18,
+    borderRadius: 22,
     padding: 16,
-    marginBottom: 12,
-    background: "linear-gradient(180deg, rgba(110,20,210,0.95), rgba(80,10,180,0.95))",
-    border: "1px solid rgba(255,255,255,0.06)",
+    background: "rgba(12, 18, 44, 0.65)",
+    border: "1px solid rgba(255,255,255,0.08)",
+    boxShadow: "0 10px 24px rgba(0,0,0,0.25)",
   },
   row: { display: "flex", gap: 14, alignItems: "center" },
   avatar: {
-    width: 70,
-    height: 70,
+    width: 88,
+    height: 88,
     borderRadius: 999,
     background: "rgba(20, 70, 120, 0.7)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    fontSize: 34,
   },
-  line: { fontSize: 15, lineHeight: 1.35, marginBottom: 6 },
-  hot: { color: "#ff3b6a", fontWeight: 900 },
-  btn: {
-    width: "100%",
-    borderRadius: 14,
-    padding: "12px 14px",
-    background: "rgba(15, 20, 50, 0.35)",
-    border: "1px solid rgba(255,255,255,0.12)",
-    color: "white",
+  moon: { fontSize: 44, transform: "translateY(1px)" },
+  line: { fontSize: 18, lineHeight: 1.25, marginBottom: 6 },
+  lineLabel: { fontWeight: 900, opacity: 0.95 },
+  lineValue: { fontWeight: 500, opacity: 0.95 },
+  sectionTitle: {
+    marginTop: 18,
+    marginBottom: 10,
+    fontSize: 22,
     fontWeight: 900,
+    color: "rgba(170, 200, 255, 0.9)",
+  },
+  grid2: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 },
+  purpleCard: {
+    height: 108,
+    borderRadius: 18,
+    padding: 14,
+    background: "linear-gradient(180deg, rgba(110,20,210,0.95), rgba(80,10,180,0.95))",
+    boxShadow: "0 14px 24px rgba(0,0,0,0.28)",
+    border: "1px solid rgba(255,255,255,0.06)",
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: "center",
+    gap: 10,
+  },
+  purpleCardWide: {
+    borderRadius: 18,
+    padding: 16,
+    background: "linear-gradient(180deg, rgba(110,20,210,0.95), rgba(80,10,180,0.95))",
+    boxShadow: "0 14px 24px rgba(0,0,0,0.28)",
+    border: "1px solid rgba(255,255,255,0.06)",
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: "center",
+    gap: 10,
+    minHeight: 92,
+  },
+  icon: {
+    fontSize: 28,
+    fontWeight: 900,
+    opacity: 0.95,
+    textAlign: "center",
+  },
+  purpleText: {
+    fontSize: 18,
+    textAlign: "center",
+    color: "rgba(240,240,255,0.95)",
+    lineHeight: 1.15,
+    fontWeight: 600,
+  },
+  hot: {
+    color: "#ff3b6a",
+    fontWeight: 900,
+    letterSpacing: 0.5,
+  },
+  actionsGrid: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: 12,
+  },
+  actionBtn: {
+    borderRadius: 18,
+    padding: "16px 14px",
+    background: "rgba(90, 10, 190, 0.9)",
+    border: "1px solid rgba(255,255,255,0.06)",
+    color: "white",
     cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    fontWeight: 900,
+    fontSize: 18,
+    boxShadow: "0 14px 24px rgba(0,0,0,0.25)",
+  },
+  actionIcon: { fontSize: 18, opacity: 0.95 },
+  actionLabel: { letterSpacing: 0.5 },
+  devHint: {
+    marginTop: 12,
+    fontSize: 12,
+    opacity: 0.7,
+    display: "flex",
+    gap: 8,
+    flexWrap: "wrap",
+    alignItems: "center",
+  },
+  linkBtn: {
+    background: "transparent",
+    border: "none",
+    color: "rgba(210,220,255,0.95)",
+    textDecoration: "underline",
+    cursor: "pointer",
+    fontWeight: 800,
+  },
+  listCard: {
+    marginTop: 14,
+    borderRadius: 18,
+    padding: 14,
+    background: "rgba(12, 18, 44, 0.55)",
+    border: "1px solid rgba(255,255,255,0.08)",
+  },
+  listTitle: { fontWeight: 900, opacity: 0.9, marginBottom: 10 },
+  listRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    padding: "8px 0",
+    borderTop: "1px solid rgba(255,255,255,0.06)",
+  },
+  bottomNav: {
+    height: 74,
+    background: "rgba(25, 70, 120, 0.85)",
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr 1fr",
+    alignItems: "center",
+    padding: "0 10px",
+  },
+  navItem: {
+    background: "transparent",
+    border: "none",
+    color: "white",
+    cursor: "pointer",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: 6,
+    fontWeight: 900,
+  },
+  navLabel: { opacity: 0.9, fontSize: 18 },
+  navActive: { opacity: 1 },
+  navUnderline: {
+    width: 70,
+    height: 3,
+    borderRadius: 99,
+    background: "rgba(255,255,255,0.9)",
   },
 };
