@@ -10,7 +10,8 @@ export default async function Page({ params, searchParams }: PageProps) {
   const sp = await searchParams;
 
   const demo =
-    sp?.demo === "1" || (Array.isArray(sp?.demo) && sp.demo.includes("1"));
+    sp?.demo === "1" ||
+    (Array.isArray(sp?.demo) && sp.demo.includes("1"));
 
   return <TapClient lighterId={id} demo={demo} />;
 }
