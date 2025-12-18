@@ -1,5 +1,19 @@
-// Demo-safe stub.
-// This project previously referenced Supabase, but the dependency is not installed.
-// To re-enable Supabase later, install `@supabase/supabase-js` and restore the real client.
+// lib/supabaseClient.ts
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-export const supabase = null
+let cached: SupabaseClient | null = null;
+
+export function getSupabase(): SupabaseClient | null {
+  if (cached) return cached;
+
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!url || !anon) return null;
+
+  cached = createClient(url, anon, {
+    auth: { persistSession: true, autoRefreshToken: true },
+  });
+
+  return cached;
+}
