@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
+import { supabase } from "../../../lib/supabaseClient";
 
 type TapRow = {
   id: string;
@@ -10,21 +10,12 @@ type TapRow = {
   lat: number | null;
   lng: number | null;
   accuracy_m: number | null;
-  device_id: string | null;
-  town: string | null;
-  county: string | null;
-  country: string | null;
 };
 
 type LighterRow = {
   id: string;
   name: string | null;
   avatar_seed: string | null;
-};
-
-type Metrics = {
-  owners_unique: number;
-  distance_km: number;
 };
 
 export default function TapClient({ id }: { id: string }) {
@@ -34,7 +25,6 @@ export default function TapClient({ id }: { id: string }) {
 
   const [lighter, setLighter] = useState<LighterRow | null>(null);
   const [taps, setTaps] = useState<TapRow[]>([]);
-  const [metrics, setMetrics] = useState<Metrics>({ owners_unique: 0, distance_km: 0 });
 
   // top-right clock
   useEffect(() => {
@@ -67,97 +57,7 @@ export default function TapClient({ id }: { id: string }) {
     return `${hh}:${mm}`;
   };
 
-  const getOrCreateDeviceId = () => {
-    try {
-      const key = "wml_device_id";
-      let v = localStorage.getItem(key);
-      if (!v) {
-        v = crypto.randomUUID();
-        localStorage.setItem(key, v);
-      }
-      return v;
-    } catch {
-      return null;
-    }
-  };
-
-  // Reverse geocode using OpenStreetMap Nominatim (client-side).
-  // NOTE: This is fine for pilot testing; for scale we should move to a server/API with caching.
-  const reverseGeocode = async (lat: number, lng: number) => {
-    try {
-      const url =
-        `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(
-          String(lat)
-        )}&lon=${encodeURIComponent(String(lng))}&zoom=12&addressdetails=1`;
-
-      const res = await fetch(url, {
-        headers: {
-          "Accept": "application/json",
-        },
-      });
-      if (!res.ok) return { town: null, county: null, country: null };
-
-      const json: any = await res.json();
-      const a = json?.address ?? {};
-
-      const town =
-        a.village ?? a.town ?? a.city ?? a.hamlet ?? a.suburb ?? a.locality ?? a.municipality ?? null;
-
-      const county = a.county ?? a.state_district ?? a.state ?? null;
-
-      const country = a.country ?? null;
-
-      return {
-        town: town ? String(town) : null,
-        county: county ? String(county) : null,
-        country: country ? String(country) : null,
-      };
-    } catch {
-      return { town: null, county: null, country: null };
-    }
-  };
-
-  const haversineKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-    const R = 6371;
-    const toRad = (x: number) => (x * Math.PI) / 180;
-    const dLat = toRad(lat2 - lat1);
-    const dLon = toRad(lon2 - lon1);
-    const a =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
-  };
-
-  const computeMetrics = (rows: TapRow[]) => {
-    // owners_unique = unique device_id
-    const owners = new Set<string>();
-    for (const r of rows) if (r.device_id) owners.add(r.device_id);
-
-    // distance_km = sum of distances between consecutive taps (chronological)
-    let dist = 0;
-    const chrono = [...rows].sort((a, b) => +new Date(a.tapped_at) - +new Date(b.tapped_at));
-    for (let i = 1; i < chrono.length; i++) {
-      const p = chrono[i - 1];
-      const c = chrono[i];
-      if (
-        typeof p.lat === "number" &&
-        typeof p.lng === "number" &&
-        typeof c.lat === "number" &&
-        typeof c.lng === "number"
-      ) {
-        dist += haversineKm(p.lat, p.lng, c.lat, c.lng);
-      }
-    }
-
-    setMetrics({
-      owners_unique: owners.size,
-      distance_km: Math.round(dist * 10) / 10, // 1 decimal
-    });
-  };
-
   const fetchAll = async () => {
-    // 1) lighter profile (optional)
     const { data: lighterRow } = await supabase
       .from("lighters")
       .select("id,name,avatar_seed")
@@ -166,19 +66,15 @@ export default function TapClient({ id }: { id: string }) {
 
     setLighter((lighterRow as any) ?? null);
 
-    // 2) taps (latest 50 so distance calc is meaningful)
     const { data: tapRows, error: tapErr } = await supabase
       .from("taps")
-      .select("id,lighter_id,tapped_at,lat,lng,accuracy_m,device_id,town,county,country")
+      .select("id,lighter_id,tapped_at,lat,lng,accuracy_m")
       .eq("lighter_id", id)
       .order("tapped_at", { ascending: false })
-      .limit(50);
+      .limit(10);
 
     if (tapErr) throw tapErr;
-
-    const rows = ((tapRows as any) ?? []) as TapRow[];
-    setTaps(rows);
-    computeMetrics(rows);
+    setTaps((tapRows as any) ?? []);
   };
 
   const insertTap = async (payload: Partial<TapRow>) => {
@@ -187,10 +83,6 @@ export default function TapClient({ id }: { id: string }) {
       lat: payload.lat ?? null,
       lng: payload.lng ?? null,
       accuracy_m: payload.accuracy_m ?? null,
-      device_id: payload.device_id ?? null,
-      town: payload.town ?? null,
-      county: payload.county ?? null,
-      country: payload.country ?? null,
     });
     if (error) throw error;
   };
@@ -204,9 +96,6 @@ export default function TapClient({ id }: { id: string }) {
         setStatus("logging");
         setErr("");
 
-        const deviceId = getOrCreateDeviceId();
-
-        // try to get location, but don't block if denied/slow
         const loc = await new Promise<{ lat?: number; lng?: number; accuracy_m?: number }>((resolve) => {
           if (!navigator.geolocation) return resolve({});
           navigator.geolocation.getCurrentPosition(
@@ -221,19 +110,10 @@ export default function TapClient({ id }: { id: string }) {
           );
         });
 
-        let place = { town: null as string | null, county: null as string | null, country: null as string | null };
-        if (typeof loc.lat === "number" && typeof loc.lng === "number") {
-          place = await reverseGeocode(loc.lat, loc.lng);
-        }
-
         await insertTap({
-          device_id: deviceId,
           lat: typeof loc.lat === "number" ? loc.lat : null,
           lng: typeof loc.lng === "number" ? loc.lng : null,
           accuracy_m: typeof loc.accuracy_m === "number" ? loc.accuracy_m : null,
-          town: place.town,
-          county: place.county,
-          country: place.country,
         });
 
         if (!cancelled) {
@@ -256,17 +136,7 @@ export default function TapClient({ id }: { id: string }) {
   }, [id]);
 
   const lastTap = taps?.[0];
-
-  const lastSeenLine = () => {
-    if (!lastTap) return "No taps yet.";
-    const when = formatWhen(lastTap.tapped_at);
-
-    const parts = [lastTap.town, lastTap.county, lastTap.country].filter(Boolean) as string[];
-    const place = parts.length ? parts.join(", ") : "Unknown location";
-
-    // show privacy band: ±1km
-    return `Last seen at ${when} · ${place} · ±1km`;
-  };
+  const totalShown = taps.length;
 
   return (
     <div style={styles.screen}>
@@ -283,7 +153,6 @@ export default function TapClient({ id }: { id: string }) {
             </div>
           ) : null}
 
-          {/* Main card */}
           <div style={styles.card}>
             <div style={styles.row}>
               <div style={styles.avatar}>
@@ -295,20 +164,54 @@ export default function TapClient({ id }: { id: string }) {
                 <Line label="Pattern" value="Nocturnal" />
                 <Line label="Style" value="Social" />
                 <Line label="Possession Streak" value="07 Days" />
-                <Line label="Total Taps (shown)" value={`${taps.length}`} />
-                <Line label="Owners (unique phones)" value={`${metrics.owners_unique}`} />
-                <Line label="Distance travelled" value={`${metrics.distance_km} km`} />
+                <Line label="Total Taps (shown)" value={`${totalShown}`} />
               </div>
             </div>
           </div>
 
           <SectionTitle>Journey (Factual)</SectionTitle>
 
-          {/* HIDDEN: Lighter ID + Profile cards (requested) */}
-          {/* <div style={styles.grid2}> ... </div> */}
+          <div style={styles.grid2}>
+            <MiniCard
+              icon="▢"
+              text={
+                <>
+                  Lighter ID: <Hot>{id}</Hot>
+                </>
+              }
+            />
+            <MiniCard
+              icon="≋"
+              text={
+                <>
+                  Profile: <Hot>{lighter?.name ?? "Unknown"}</Hot>
+                </>
+              }
+            />
+          </div>
 
           <div style={{ marginTop: 12 }}>
-            <WideCard icon="◯" text={<>{lastSeenLine()}</>} />
+            <WideCard
+              icon="◯"
+              text={
+                lastTap ? (
+                  <>
+                    Last seen at <Hot>{formatWhen(lastTap.tapped_at)}</Hot>{" "}
+                    {lastTap.lat && lastTap.lng ? (
+                      <>
+                        · <Hot>GPS</Hot> (±{Math.round(lastTap.accuracy_m ?? 0)}m)
+                      </>
+                    ) : (
+                      <>
+                        · <Hot>NO GPS</Hot>
+                      </>
+                    )}
+                  </>
+                ) : (
+                  <>No taps yet.</>
+                )
+              }
+            />
           </div>
 
           <SectionTitle>Campfire Story (Legend)</SectionTitle>
@@ -316,8 +219,12 @@ export default function TapClient({ id }: { id: string }) {
 
           <SectionTitle>ACTIONS</SectionTitle>
           <div style={styles.actionsGrid}>
-            <ActionButton label="PROFILE" icon="☺" onClick={() => copy("TODO: owner profile")} />
-            <ActionButton label="LOCATION" icon="⚑" onClick={() => copy(lastTap?.town ?? "Unknown")} />
+            <ActionButton label="PROFILE" icon="☺" onClick={() => copy(id)} />
+            <ActionButton
+              label="LOCATION"
+              icon="⚑"
+              onClick={() => copy(lastTap?.lat ? `${lastTap.lat},${lastTap.lng}` : "No GPS")}
+            />
             <ActionButton label="SOCIAL" icon="♥" onClick={() => copy(shareUrl)} />
             <ActionButton label="PING" icon="◎" onClick={() => fetchAll()} />
           </div>
@@ -329,8 +236,19 @@ export default function TapClient({ id }: { id: string }) {
             </button>
           </div>
 
-          {/* HIDDEN: Recent taps list (requested) */}
-          {/* <div style={styles.listCard}> ... </div> */}
+          <div style={styles.listCard}>
+            <div style={styles.listTitle}>Recent taps</div>
+            {taps.length === 0 ? (
+              <div style={styles.listRow}>No taps recorded.</div>
+            ) : (
+              taps.map((t) => (
+                <div key={t.id} style={styles.listRow}>
+                  <span style={{ fontWeight: 800 }}>{formatWhen(t.tapped_at)}</span>
+                  <span style={{ opacity: 0.8 }}>{t.lat && t.lng ? `GPS ±${Math.round(t.accuracy_m ?? 0)}m` : "No GPS"}</span>
+                </div>
+              ))
+            )}
+          </div>
         </div>
 
         <div style={styles.bottomNav}>
@@ -343,8 +261,6 @@ export default function TapClient({ id }: { id: string }) {
   );
 }
 
-/** ---------- UI pieces ---------- */
-
 function Line({ label, value }: { label: string; value: string }) {
   return (
     <div style={styles.line}>
@@ -354,8 +270,21 @@ function Line({ label, value }: { label: string; value: string }) {
   );
 }
 
+function Hot({ children }: { children: React.ReactNode }) {
+  return <span style={styles.hot}>{children}</span>;
+}
+
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return <div style={styles.sectionTitle}>{children}</div>;
+}
+
+function MiniCard({ icon, text }: { icon: string; text: React.ReactNode }) {
+  return (
+    <div style={styles.purpleCard}>
+      <div style={styles.icon}>{icon}</div>
+      <div style={styles.purpleText}>{text}</div>
+    </div>
+  );
 }
 
 function WideCard({ icon, text }: { icon: string; text: React.ReactNode }) {
@@ -367,15 +296,7 @@ function WideCard({ icon, text }: { icon: string; text: React.ReactNode }) {
   );
 }
 
-function ActionButton({
-  label,
-  icon,
-  onClick,
-}: {
-  label: string;
-  icon: string;
-  onClick: () => void;
-}) {
+function ActionButton({ label, icon, onClick }: { label: string; icon: string; onClick: () => void }) {
   return (
     <button onClick={onClick} style={styles.actionBtn}>
       <span style={styles.actionIcon}>{icon}</span>
@@ -384,15 +305,7 @@ function ActionButton({
   );
 }
 
-function NavItem({
-  label,
-  active,
-  onClick,
-}: {
-  label: string;
-  active: boolean;
-  onClick: () => void;
-}) {
+function NavItem({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
     <button onClick={onClick} style={styles.navItem}>
       <span style={{ ...styles.navLabel, ...(active ? styles.navActive : {}) }}>{label}</span>
@@ -400,8 +313,6 @@ function NavItem({
     </button>
   );
 }
-
-/** ---------- Styles ---------- */
 
 const styles: Record<string, any> = {
   screen: {
@@ -415,7 +326,6 @@ const styles: Record<string, any> = {
     fontFamily: "system-ui",
     color: "white",
   },
-
   phone: {
     width: 390,
     maxWidth: "92vw",
@@ -425,7 +335,6 @@ const styles: Record<string, any> = {
     boxShadow: "0 30px 90px rgba(0,0,0,0.55)",
     border: "1px solid rgba(255,255,255,0.08)",
   },
-
   topBar: {
     height: 70,
     padding: "0 18px",
@@ -436,13 +345,11 @@ const styles: Record<string, any> = {
   },
   topTitle: { fontSize: 26, fontWeight: 900, letterSpacing: 0.5 },
   topTime: { fontSize: 22, fontWeight: 800, opacity: 0.95 },
-
   content: {
     padding: 18,
     background:
       "radial-gradient(700px 300px at 20% 10%, rgba(255,255,255,0.06), transparent 60%), rgba(10, 12, 28, 0.35)",
   },
-
   statusPill: {
     marginBottom: 12,
     borderRadius: 999,
@@ -452,7 +359,6 @@ const styles: Record<string, any> = {
     fontWeight: 800,
     fontSize: 14,
   },
-
   card: {
     borderRadius: 22,
     padding: 16,
@@ -461,7 +367,6 @@ const styles: Record<string, any> = {
     boxShadow: "0 10px 24px rgba(0,0,0,0.25)",
   },
   row: { display: "flex", gap: 14, alignItems: "center" },
-
   avatar: {
     width: 88,
     height: 88,
@@ -472,11 +377,9 @@ const styles: Record<string, any> = {
     justifyContent: "center",
   },
   moon: { fontSize: 44, transform: "translateY(1px)" },
-
   line: { fontSize: 20, lineHeight: 1.25, marginBottom: 6 },
   lineLabel: { fontWeight: 900, opacity: 0.95 },
   lineValue: { fontWeight: 500, opacity: 0.95 },
-
   sectionTitle: {
     marginTop: 18,
     marginBottom: 10,
@@ -484,7 +387,19 @@ const styles: Record<string, any> = {
     fontWeight: 900,
     color: "rgba(170, 200, 255, 0.9)",
   },
-
+  grid2: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 },
+  purpleCard: {
+    height: 108,
+    borderRadius: 18,
+    padding: 14,
+    background: "linear-gradient(180deg, rgba(110,20,210,0.95), rgba(80,10,180,0.95))",
+    boxShadow: "0 14px 24px rgba(0,0,0,0.28)",
+    border: "1px solid rgba(255,255,255,0.06)",
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: "center",
+    gap: 10,
+  },
   purpleCardWide: {
     borderRadius: 18,
     padding: 16,
@@ -497,14 +412,7 @@ const styles: Record<string, any> = {
     gap: 10,
     minHeight: 92,
   },
-
-  icon: {
-    fontSize: 28,
-    fontWeight: 900,
-    opacity: 0.95,
-    textAlign: "center",
-  },
-
+  icon: { fontSize: 28, fontWeight: 900, opacity: 0.95, textAlign: "center" },
   purpleText: {
     fontSize: 20,
     textAlign: "center",
@@ -512,13 +420,8 @@ const styles: Record<string, any> = {
     lineHeight: 1.15,
     fontWeight: 600,
   },
-
-  actionsGrid: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: 12,
-  },
-
+  hot: { color: "#ff3b6a", fontWeight: 900, letterSpacing: 0.5 },
+  actionsGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 },
   actionBtn: {
     borderRadius: 18,
     padding: "16px 14px",
@@ -536,7 +439,6 @@ const styles: Record<string, any> = {
   },
   actionIcon: { fontSize: 18, opacity: 0.95 },
   actionLabel: { letterSpacing: 0.5 },
-
   devHint: {
     marginTop: 12,
     fontSize: 12,
@@ -554,7 +456,20 @@ const styles: Record<string, any> = {
     cursor: "pointer",
     fontWeight: 800,
   },
-
+  listCard: {
+    marginTop: 14,
+    borderRadius: 18,
+    padding: 14,
+    background: "rgba(12, 18, 44, 0.55)",
+    border: "1px solid rgba(255,255,255,0.08)",
+  },
+  listTitle: { fontWeight: 900, opacity: 0.9, marginBottom: 10 },
+  listRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    padding: "8px 0",
+    borderTop: "1px solid rgba(255,255,255,0.06)",
+  },
   bottomNav: {
     height: 74,
     background: "rgba(25, 70, 120, 0.85)",
@@ -563,7 +478,6 @@ const styles: Record<string, any> = {
     alignItems: "center",
     padding: "0 10px",
   },
-
   navItem: {
     background: "transparent",
     border: "none",
@@ -577,10 +491,5 @@ const styles: Record<string, any> = {
   },
   navLabel: { opacity: 0.9, fontSize: 18 },
   navActive: { opacity: 1 },
-  navUnderline: {
-    width: 70,
-    height: 3,
-    borderRadius: 99,
-    background: "rgba(255,255,255,0.9)",
-  },
+  navUnderline: { width: 70, height: 3, borderRadius: 99, background: "rgba(255,255,255,0.9)" },
 };
