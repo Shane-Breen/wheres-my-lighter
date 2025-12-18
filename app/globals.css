@@ -2,16 +2,11 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Nice default background so the interface looks like “yesterday” again */
-html,
-body {
+/* Optional: baseline look */
+html, body {
   height: 100%;
 }
 
 body {
   margin: 0;
-  background: radial-gradient(1200px 600px at 30% 20%, #2b1b5a 0%, transparent 60%),
-    radial-gradient(900px 700px at 75% 30%, #0b3a5a 0%, transparent 55%),
-    linear-gradient(180deg, #050617 0%, #070716 100%);
-  color: white;
 }
