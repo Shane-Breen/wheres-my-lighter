@@ -1,8 +1,8 @@
-import type { Metadata } from "next";
+import "./globals.css";
 
-export const metadata: Metadata = {
+export const metadata = {
   title: "Where’s My Lighter?",
-  description: "Track a lighter’s journey. One tap at a time.",
+  description: "Track a lighter’s journey",
 };
 
 export default function RootLayout({
@@ -12,7 +12,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body style={{ margin: 0 }}>{children}</body>
+      <body>{children}</body>
     </html>
   );
 }
