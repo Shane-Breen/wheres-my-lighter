@@ -1,3 +1,4 @@
+// app/lighter/[id]/page.tsx
 import TapClient from './TapClient';
 
 type Props = {
@@ -6,6 +7,5 @@ type Props = {
 
 export default async function Page({ params }: Props) {
   const { id } = await params;
-
   return <TapClient lighterId={id} />;
 }
