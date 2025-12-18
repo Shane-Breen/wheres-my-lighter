@@ -1,13 +1,10 @@
-import TapClient from './TapClient';
+import TapClient from "./TapClient";
 
-type PageProps = {
-  params: {
-    id: string;
-  };
-};
-
-export default function Page({ params }: PageProps) {
-  const lighterId = params.id;
-
-  return <TapClient lighterId={lighterId} />;
+export default async function Page({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  return <TapClient lighterId={id} />;
 }
