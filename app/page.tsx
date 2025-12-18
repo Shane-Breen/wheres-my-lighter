@@ -1,18 +1,11 @@
-export default function Home() {
-  return (
-    <main style={{ padding: 40, fontFamily: "system-ui" }}>
-      <h1>Where’s My Lighter?</h1>
-      <p>This is the home page.</p>
+import TapClient from "./TapClient";
 
-      <p>
-        Test pages:
-        {" "}
-        <a href="/route-check">/route-check</a>
-        {" "}
-        •
-        {" "}
-        <a href="/lighter/test-001">/lighter/test-001</a>
-      </p>
-    </main>
-  );
+export default async function Page({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+
+  return <TapClient lighterId={id} />;
 }
