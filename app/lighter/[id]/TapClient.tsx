@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { supabase } from "../../../lib/supabaseClient";
+import { supabase } from "@/lib/supabaseClient";
 
 type TapRow = {
   id: string;
@@ -10,12 +10,21 @@ type TapRow = {
   lat: number | null;
   lng: number | null;
   accuracy_m: number | null;
+
+  place_town?: string | null;
+  place_county?: string | null;
+  place_country?: string | null;
+  place_label?: string | null;
+  lat_approx?: number | null;
+  lng_approx?: number | null;
 };
 
 type LighterRow = {
   id: string;
   name: string | null;
   avatar_seed: string | null;
+
+  last_place_label?: string | null;
 };
 
 export default function TapClient({ id }: { id: string }) {
@@ -58,17 +67,21 @@ export default function TapClient({ id }: { id: string }) {
   };
 
   const fetchAll = async () => {
+    // 1) lighter profile (optional)
     const { data: lighterRow } = await supabase
       .from("lighters")
-      .select("id,name,avatar_seed")
+      .select("id,name,avatar_seed,last_place_label")
       .eq("id", id)
       .maybeSingle();
 
     setLighter((lighterRow as any) ?? null);
 
+    // 2) taps
     const { data: tapRows, error: tapErr } = await supabase
       .from("taps")
-      .select("id,lighter_id,tapped_at,lat,lng,accuracy_m")
+      .select(
+        "id,lighter_id,tapped_at,lat,lng,accuracy_m,place_town,place_county,place_country,place_label,lat_approx,lng_approx"
+      )
       .eq("lighter_id", id)
       .order("tapped_at", { ascending: false })
       .limit(10);
@@ -78,16 +91,63 @@ export default function TapClient({ id }: { id: string }) {
   };
 
   const insertTap = async (payload: Partial<TapRow>) => {
-    const { error } = await supabase.from("taps").insert({
-      lighter_id: id,
-      lat: payload.lat ?? null,
-      lng: payload.lng ?? null,
-      accuracy_m: payload.accuracy_m ?? null,
-    });
+    const { data, error } = await supabase
+      .from("taps")
+      .insert({
+        lighter_id: id,
+        lat: payload.lat ?? null,
+        lng: payload.lng ?? null,
+        accuracy_m: payload.accuracy_m ?? null,
+      })
+      .select("id,lat,lng,accuracy_m")
+      .single();
+
     if (error) throw error;
+    return data as { id: string; lat: number | null; lng: number | null; accuracy_m: number | null };
   };
 
-  // MAIN: on first load => log tap => fetch data
+  const enrichTapWithPlace = async (tapId: string, lat: number, lng: number) => {
+    // Ask our server endpoint for town/county/country + approx coords
+    const r = await fetch(`/api/reverse?lat=${encodeURIComponent(lat)}&lng=${encodeURIComponent(lng)}`);
+    if (!r.ok) return;
+
+    const j = await r.json();
+
+    const town = j?.town ?? null;
+    const county = j?.county ?? null;
+    const country = j?.country ?? null;
+    const label = j?.label ?? null;
+    const lat_approx = j?.lat_approx ?? null;
+    const lng_approx = j?.lng_approx ?? null;
+
+    // Write place onto this tap row
+    await supabase
+      .from("taps")
+      .update({
+        place_town: town,
+        place_county: county,
+        place_country: country,
+        place_label: label,
+        lat_approx,
+        lng_approx,
+      })
+      .eq("id", tapId);
+
+    // Also store "last place" on lighters (fast reads)
+    await supabase
+      .from("lighters")
+      .update({
+        last_place_town: town,
+        last_place_county: county,
+        last_place_country: country,
+        last_place_label: label,
+        last_lat_approx: lat_approx,
+        last_lng_approx: lng_approx,
+      })
+      .eq("id", id);
+  };
+
+  // MAIN: on first load => log tap => reverse geocode => fetch data
   useEffect(() => {
     let cancelled = false;
 
@@ -96,6 +156,7 @@ export default function TapClient({ id }: { id: string }) {
         setStatus("logging");
         setErr("");
 
+        // try to get location, but don't block if denied/slow
         const loc = await new Promise<{ lat?: number; lng?: number; accuracy_m?: number }>((resolve) => {
           if (!navigator.geolocation) return resolve({});
           navigator.geolocation.getCurrentPosition(
@@ -110,11 +171,16 @@ export default function TapClient({ id }: { id: string }) {
           );
         });
 
-        await insertTap({
+        const inserted = await insertTap({
           lat: typeof loc.lat === "number" ? loc.lat : null,
           lng: typeof loc.lng === "number" ? loc.lng : null,
           accuracy_m: typeof loc.accuracy_m === "number" ? loc.accuracy_m : null,
         });
+
+        // Reverse geocode only if we have coordinates
+        if (inserted.lat != null && inserted.lng != null) {
+          await enrichTapWithPlace(inserted.id, inserted.lat, inserted.lng);
+        }
 
         if (!cancelled) {
           await fetchAll();
@@ -137,6 +203,11 @@ export default function TapClient({ id }: { id: string }) {
 
   const lastTap = taps?.[0];
   const totalShown = taps.length;
+
+  const lastPlace =
+    lastTap?.place_label ||
+    lighter?.last_place_label ||
+    (lastTap?.lat && lastTap?.lng ? "Location recorded" : "No GPS");
 
   return (
     <div style={styles.screen}>
@@ -171,25 +242,6 @@ export default function TapClient({ id }: { id: string }) {
 
           <SectionTitle>Journey (Factual)</SectionTitle>
 
-          <div style={styles.grid2}>
-            <MiniCard
-              icon="▢"
-              text={
-                <>
-                  Lighter ID: <Hot>{id}</Hot>
-                </>
-              }
-            />
-            <MiniCard
-              icon="≋"
-              text={
-                <>
-                  Profile: <Hot>{lighter?.name ?? "Unknown"}</Hot>
-                </>
-              }
-            />
-          </div>
-
           <div style={{ marginTop: 12 }}>
             <WideCard
               icon="◯"
@@ -197,15 +249,14 @@ export default function TapClient({ id }: { id: string }) {
                 lastTap ? (
                   <>
                     Last seen at <Hot>{formatWhen(lastTap.tapped_at)}</Hot>{" "}
-                    {lastTap.lat && lastTap.lng ? (
+                    {" · "}
+                    <Hot>{lastPlace}</Hot>
+                    {lastTap?.lat != null && lastTap?.lng != null ? (
                       <>
-                        · <Hot>GPS</Hot> (±{Math.round(lastTap.accuracy_m ?? 0)}m)
+                        {" · "}
+                        <span style={{ opacity: 0.9 }}>±1km</span>
                       </>
-                    ) : (
-                      <>
-                        · <Hot>NO GPS</Hot>
-                      </>
-                    )}
+                    ) : null}
                   </>
                 ) : (
                   <>No taps yet.</>
@@ -220,11 +271,7 @@ export default function TapClient({ id }: { id: string }) {
           <SectionTitle>ACTIONS</SectionTitle>
           <div style={styles.actionsGrid}>
             <ActionButton label="PROFILE" icon="☺" onClick={() => copy(id)} />
-            <ActionButton
-              label="LOCATION"
-              icon="⚑"
-              onClick={() => copy(lastTap?.lat ? `${lastTap.lat},${lastTap.lng}` : "No GPS")}
-            />
+            <ActionButton label="LOCATION" icon="⚑" onClick={() => copy(lastPlace)} />
             <ActionButton label="SOCIAL" icon="♥" onClick={() => copy(shareUrl)} />
             <ActionButton label="PING" icon="◎" onClick={() => fetchAll()} />
           </div>
@@ -234,20 +281,6 @@ export default function TapClient({ id }: { id: string }) {
             <button style={styles.linkBtn} onClick={() => copy(shareUrl)}>
               Copy link
             </button>
-          </div>
-
-          <div style={styles.listCard}>
-            <div style={styles.listTitle}>Recent taps</div>
-            {taps.length === 0 ? (
-              <div style={styles.listRow}>No taps recorded.</div>
-            ) : (
-              taps.map((t) => (
-                <div key={t.id} style={styles.listRow}>
-                  <span style={{ fontWeight: 800 }}>{formatWhen(t.tapped_at)}</span>
-                  <span style={{ opacity: 0.8 }}>{t.lat && t.lng ? `GPS ±${Math.round(t.accuracy_m ?? 0)}m` : "No GPS"}</span>
-                </div>
-              ))
-            )}
           </div>
         </div>
 
@@ -260,6 +293,8 @@ export default function TapClient({ id }: { id: string }) {
     </div>
   );
 }
+
+/** ---------- UI pieces ---------- */
 
 function Line({ label, value }: { label: string; value: string }) {
   return (
@@ -278,15 +313,6 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
   return <div style={styles.sectionTitle}>{children}</div>;
 }
 
-function MiniCard({ icon, text }: { icon: string; text: React.ReactNode }) {
-  return (
-    <div style={styles.purpleCard}>
-      <div style={styles.icon}>{icon}</div>
-      <div style={styles.purpleText}>{text}</div>
-    </div>
-  );
-}
-
 function WideCard({ icon, text }: { icon: string; text: React.ReactNode }) {
   return (
     <div style={styles.purpleCardWide}>
@@ -296,7 +322,15 @@ function WideCard({ icon, text }: { icon: string; text: React.ReactNode }) {
   );
 }
 
-function ActionButton({ label, icon, onClick }: { label: string; icon: string; onClick: () => void }) {
+function ActionButton({
+  label,
+  icon,
+  onClick,
+}: {
+  label: string;
+  icon: string;
+  onClick: () => void;
+}) {
   return (
     <button onClick={onClick} style={styles.actionBtn}>
       <span style={styles.actionIcon}>{icon}</span>
@@ -305,7 +339,15 @@ function ActionButton({ label, icon, onClick }: { label: string; icon: string; o
   );
 }
 
-function NavItem({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+function NavItem({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
   return (
     <button onClick={onClick} style={styles.navItem}>
       <span style={{ ...styles.navLabel, ...(active ? styles.navActive : {}) }}>{label}</span>
@@ -313,6 +355,8 @@ function NavItem({ label, active, onClick }: { label: string; active: boolean; o
     </button>
   );
 }
+
+/** ---------- Styles ---------- */
 
 const styles: Record<string, any> = {
   screen: {
@@ -387,19 +431,6 @@ const styles: Record<string, any> = {
     fontWeight: 900,
     color: "rgba(170, 200, 255, 0.9)",
   },
-  grid2: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 },
-  purpleCard: {
-    height: 108,
-    borderRadius: 18,
-    padding: 14,
-    background: "linear-gradient(180deg, rgba(110,20,210,0.95), rgba(80,10,180,0.95))",
-    boxShadow: "0 14px 24px rgba(0,0,0,0.28)",
-    border: "1px solid rgba(255,255,255,0.06)",
-    display: "flex",
-    flexDirection: "column",
-    justifyContent: "center",
-    gap: 10,
-  },
   purpleCardWide: {
     borderRadius: 18,
     padding: 16,
@@ -412,7 +443,12 @@ const styles: Record<string, any> = {
     gap: 10,
     minHeight: 92,
   },
-  icon: { fontSize: 28, fontWeight: 900, opacity: 0.95, textAlign: "center" },
+  icon: {
+    fontSize: 28,
+    fontWeight: 900,
+    opacity: 0.95,
+    textAlign: "center",
+  },
   purpleText: {
     fontSize: 20,
     textAlign: "center",
@@ -455,20 +491,6 @@ const styles: Record<string, any> = {
     textDecoration: "underline",
     cursor: "pointer",
     fontWeight: 800,
-  },
-  listCard: {
-    marginTop: 14,
-    borderRadius: 18,
-    padding: 14,
-    background: "rgba(12, 18, 44, 0.55)",
-    border: "1px solid rgba(255,255,255,0.08)",
-  },
-  listTitle: { fontWeight: 900, opacity: 0.9, marginBottom: 10 },
-  listRow: {
-    display: "flex",
-    justifyContent: "space-between",
-    padding: "8px 0",
-    borderTop: "1px solid rgba(255,255,255,0.06)",
   },
   bottomNav: {
     height: 74,
