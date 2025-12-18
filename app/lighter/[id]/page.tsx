@@ -1,11 +1,5 @@
-// app/lighter/[id]/page.tsx
-import TapClient from './TapClient';
+import TapClient from "./TapClient";
 
-type Props = {
-  params: Promise<{ id: string }>;
-};
-
-export default async function Page({ params }: Props) {
-  const { id } = await params;
-  return <TapClient lighterId={id} />;
+export default function Page({ params }: { params: { id: string } }) {
+  return <TapClient lighterId={params.id} />;
 }
