@@ -1,63 +1,51 @@
-'use client';
+"use client";
 
-import React, { useEffect, useMemo, useState } from 'react';
-import { supabase } from '@/lib/supabaseClient';
+import { useEffect, useMemo, useState } from "react";
+import { supabase } from "@/lib/supabaseClient";
 
 type TapRow = {
   id: string;
   lighter_id: string;
   tapped_at: string | null;
-  lat: number | null;
-  lng: number | null;
-  accuracy_m: number | null;
-  place_label: string | null;
-  place_town: string | null;
-  place_county: string | null;
-  place_country: string | null;
-  place_region: string | null;
-};
 
-function fmtPlace(t: TapRow) {
-  return (
-    t.place_label ||
-    [t.place_town, t.place_county, t.place_country].filter(Boolean).join(', ') ||
-    'Unknown'
-  );
-}
+  // GPS fields (your table currently shows these)
+  lat?: number | null;
+  lng?: number | null;
+  accuracy_m?: number | null;
+
+  // Town/country fields (present in your earlier “taps column list”)
+  place_town?: string | null;
+  place_county?: string | null;
+  place_country?: string | null;
+  country?: string | null;
+  region?: string | null;
+  place_label?: string | null;
+};
 
 function daysBetween(a: Date, b: Date) {
   const ms = Math.abs(a.getTime() - b.getTime());
-  return Math.max(1, Math.floor(ms / (1000 * 60 * 60 * 24)));
+  return Math.max(1, Math.ceil(ms / (1000 * 60 * 60 * 24)));
 }
 
 export default function TapClient({ lighterId }: { lighterId: string }) {
   const [taps, setTaps] = useState<TapRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [logging, setLogging] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [status, setStatus] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
 
   async function loadTaps() {
-    setLoading(true);
-    setError(null);
-
+    setErr(null);
     const { data, error } = await supabase
-      .from('taps')
-      .select(
-        'id,lighter_id,tapped_at,lat,lng,accuracy_m,place_label,place_town,place_county,place_country,place_region'
-      )
-      .eq('lighter_id', lighterId)
-      .order('tapped_at', { ascending: false });
+      .from("taps")
+      .select("*")
+      .eq("lighter_id", lighterId)
+      .order("tapped_at", { ascending: false });
 
     if (error) {
-      setError(error.message);
-      setTaps([]);
-      setLoading(false);
+      setErr(error.message);
       return;
     }
-
-    setTaps((data || []) as TapRow[]);
-    setLoading(false);
+    setTaps((data as TapRow[]) ?? []);
   }
 
   useEffect(() => {
@@ -66,219 +54,199 @@ export default function TapClient({ lighterId }: { lighterId: string }) {
   }, [lighterId]);
 
   const stats = useMemo(() => {
-    const totalShown = taps.length;
+    const total = taps.length;
 
-    const newest = taps[0]?.tapped_at ? new Date(taps[0].tapped_at) : null;
-    const oldest =
-      taps[taps.length - 1]?.tapped_at ? new Date(taps[taps.length - 1].tapped_at) : null;
+    const newestStr = taps[0]?.tapped_at ?? null;
+    const oldestStr = total ? (taps[total - 1]?.tapped_at ?? null) : null;
 
-    const possessionDays =
-      newest && oldest ? daysBetween(newest, oldest) : 1;
+    const newest = newestStr ? new Date(newestStr) : null;
+    const oldest = oldestStr ? new Date(oldestStr) : null;
 
-    // fun placeholder archetype logic (stable UI)
-    const archetype = 'The Night Traveller';
-    const pattern = 'Nocturnal';
-    const style = 'Social';
+    const okNewest = newest && !Number.isNaN(newest.getTime());
+    const okOldest = oldest && !Number.isNaN(oldest.getTime());
+
+    const possessionDays = okNewest && okOldest ? daysBetween(newest!, oldest!) : 1;
+
+    const last = taps[0] ?? null;
+
+    const town =
+      last?.place_town ??
+      last?.place_county ??
+      last?.region ??
+      null;
+
+    const country =
+      last?.place_country ??
+      last?.country ??
+      null;
+
+    const label =
+      last?.place_label ??
+      (town && country ? `${town}, ${country}` : town ?? country ?? null);
 
     return {
-      totalShown,
-      possessionDays: String(possessionDays).padStart(2, '0'),
-      archetype,
-      pattern,
-      style,
+      total,
+      possessionDays,
+      lastLabel: label,
     };
   }, [taps]);
 
   async function logTapGPS() {
-    setLogging(true);
-    setError(null);
-    setStatus(null);
+    setToast(null);
+    setErr(null);
 
-    try {
-      if (!navigator.geolocation) {
-        setError('Geolocation not supported on this device/browser.');
-        setLogging(false);
-        return;
-      }
-
-      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject, {
-          enableHighAccuracy: true,
-          timeout: 15000,
-          maximumAge: 0,
-        });
-      });
-
-      const lat = position.coords.latitude;
-      const lng = position.coords.longitude;
-      const accuracy_m = Math.round(position.coords.accuracy || 0);
-
-      // IMPORTANT: we insert ONLY columns that exist in your CURRENT taps table:
-      // lighter_id, lat, lng, accuracy_m, (optional) place fields.
-      const { error: insErr } = await supabase.from('taps').insert([
-        {
-          lighter_id: lighterId,
-          lat,
-          lng,
-          accuracy_m,
-          // leave place fields null for now (you can fill later with reverse geocoding)
-          // place_label: null,
-          // place_town: null,
-          // place_county: null,
-          // place_country: null,
-          // place_region: null,
-          // tapped_at: letting DB default handle it (or PostgREST)
-        },
-      ]);
-
-      if (insErr) {
-        setError(insErr.message);
-        setLogging(false);
-        return;
-      }
-
-      setStatus('Tap logged ✅');
-      await loadTaps();
-      setLogging(false);
-    } catch (e: any) {
-      setError(e?.message || 'Failed to get GPS location.');
-      setLogging(false);
+    if (!navigator.geolocation) {
+      setErr("Geolocation not supported on this device.");
+      return;
     }
+
+    setLoading(true);
+
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          const lat = pos.coords.latitude;
+          const lng = pos.coords.longitude;
+          const accuracy_m = Math.round(pos.coords.accuracy ?? 1000);
+
+          // IMPORTANT: insert only what we KNOW exists
+          // (lighter_id + lat/lng/accuracy_m + tapped_at default)
+          const { error } = await supabase.from("taps").insert([
+            {
+              lighter_id: lighterId,
+              lat,
+              lng,
+              accuracy_m,
+            },
+          ]);
+
+          if (error) {
+            setErr(error.message);
+            setLoading(false);
+            return;
+          }
+
+          setToast("Tap logged ✅");
+          await loadTaps();
+        } catch (e: any) {
+          setErr(e?.message ?? "Unknown error logging tap.");
+        } finally {
+          setLoading(false);
+        }
+      },
+      (geoErr) => {
+        setErr(geoErr.message || "GPS error.");
+        setLoading(false);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 12000,
+        maximumAge: 0,
+      }
+    );
   }
 
   return (
-    <div className="min-h-screen w-full bg-gradient-to-b from-slate-950 via-indigo-950 to-slate-950 text-white">
-      <div className="mx-auto max-w-md px-4 py-6">
-        {/* Top Bar */}
-        <div className="rounded-2xl bg-slate-900/60 shadow-lg ring-1 ring-white/10">
-          <div className="flex items-center justify-between px-5 py-4">
-            <div className="text-2xl font-extrabold tracking-wide">LIGHTER</div>
-            <div className="text-sm font-semibold opacity-80">
-              {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-            </div>
+    <div className="min-h-screen flex items-start justify-center p-6">
+      <div className="w-full max-w-md">
+        <div className="rounded-2xl shadow-lg overflow-hidden border">
+          <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between">
+            <div className="text-xl font-bold tracking-wide">LIGHTER</div>
+            <div className="text-sm opacity-80">{new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
           </div>
 
-          {/* Errors / Status */}
-          {(error || status) && (
-            <div className="px-5 pb-4">
-              {error && (
-                <div className="rounded-xl bg-red-500/15 px-4 py-3 text-sm ring-1 ring-red-500/30">
-                  <span className="font-semibold">Error:</span> {error}
+          {(err || toast) && (
+            <div className="px-5 pt-4">
+              {err && (
+                <div className="rounded-xl bg-red-100 text-red-900 px-4 py-3 text-sm">
+                  Error: {err}
                 </div>
               )}
-              {!error && status && (
-                <div className="rounded-xl bg-emerald-500/15 px-4 py-3 text-sm ring-1 ring-emerald-500/30">
-                  {status}
+              {toast && (
+                <div className="rounded-xl bg-green-100 text-green-900 px-4 py-3 text-sm">
+                  {toast}
                 </div>
               )}
             </div>
           )}
 
-          {/* Archetype Card */}
-          <div className="px-5 pb-5">
-            <div className="rounded-2xl bg-slate-950/50 p-5 ring-1 ring-white/10">
-              <div className="flex items-center gap-4">
-                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-slate-900 ring-1 ring-white/10">
-                  <span className="text-3xl">🌙</span>
-                </div>
+          <div className="px-5 py-5 bg-gradient-to-b from-slate-950 to-slate-900 text-white">
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+              <div className="text-sm opacity-80 mb-2">Archetype: <span className="font-semibold opacity-100">The Night Traveller</span></div>
+              <div className="text-sm opacity-80 mb-2">Pattern: <span className="font-semibold opacity-100">Nocturnal</span></div>
+              <div className="text-sm opacity-80 mb-2">Style: <span className="font-semibold opacity-100">Social</span></div>
+              <div className="text-sm opacity-80 mb-2">Possession Streak: <span className="font-semibold opacity-100">{String(stats.possessionDays).padStart(2, "0")} Days</span></div>
+              <div className="text-sm opacity-80">Total Taps (shown): <span className="font-semibold opacity-100">{stats.total}</span></div>
+            </div>
 
-                <div className="space-y-1">
-                  <div className="text-base font-semibold">
-                    Archetype: <span className="font-extrabold">{stats.archetype}</span>
-                  </div>
-                  <div className="text-base font-semibold">
-                    Pattern: <span className="font-extrabold">{stats.pattern}</span>
-                  </div>
-                  <div className="text-base font-semibold">
-                    Style: <span className="font-extrabold">{stats.style}</span>
-                  </div>
-                  <div className="text-base font-semibold">
-                    Possession Streak: <span className="font-extrabold">{stats.possessionDays}</span> Days
-                  </div>
-                  <div className="text-base font-semibold">
-                    Total Taps (shown): <span className="font-extrabold">{stats.totalShown}</span>
-                  </div>
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <div className="rounded-2xl bg-purple-700/80 p-4 text-center border border-white/10">
+                <div className="text-xs opacity-80">Lighter ID</div>
+                <div className="text-lg font-bold text-pink-200">{lighterId}</div>
+              </div>
+              <div className="rounded-2xl bg-purple-700/80 p-4 text-center border border-white/10">
+                <div className="text-xs opacity-80">Last Known</div>
+                <div className="text-sm font-semibold text-pink-200">
+                  {stats.lastLabel ?? "Unknown"}
                 </div>
               </div>
             </div>
-          </div>
-        </div>
 
-        {/* Journey */}
-        <div className="mt-6">
-          <div className="mb-3 text-lg font-extrabold text-slate-200">Journey (Factual)</div>
+            <button
+              onClick={logTapGPS}
+              disabled={loading}
+              className="mt-6 w-full rounded-2xl bg-purple-600 hover:bg-purple-500 disabled:opacity-50 py-4 font-bold tracking-wide"
+            >
+              {loading ? "LOGGING..." : "LOG TAP (GPS)"}
+            </button>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-2xl bg-purple-700/80 p-4 shadow-lg ring-1 ring-white/10">
-              <div className="text-xs font-semibold opacity-90">Lighter ID</div>
-              <div className="mt-2 text-xl font-extrabold text-pink-300">{lighterId}</div>
-            </div>
+            <div className="mt-6">
+              <div className="text-lg font-bold opacity-90 mb-2">Journey (Factual)</div>
 
-            <div className="rounded-2xl bg-purple-700/80 p-4 shadow-lg ring-1 ring-white/10">
-              <div className="text-xs font-semibold opacity-90">Profile</div>
-              <div className="mt-2 text-xl font-extrabold text-pink-300">Unknown</div>
-            </div>
-          </div>
+              {taps.length === 0 ? (
+                <div className="rounded-2xl bg-purple-700/50 border border-white/10 p-5 text-center opacity-90">
+                  No taps yet.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {taps.slice(0, 8).map((t) => {
+                    const when = t.tapped_at ? new Date(t.tapped_at) : null;
+                    const where =
+                      t.place_label ??
+                      (t.place_town && t.place_country ? `${t.place_town}, ${t.place_country}` : null) ??
+                      (t.lat != null && t.lng != null ? `${t.lat.toFixed(4)}, ${t.lng.toFixed(4)}` : "Unknown");
 
-          <button
-            onClick={logTapGPS}
-            disabled={logging}
-            className="mt-4 w-full rounded-2xl bg-purple-600 px-4 py-4 text-center text-base font-extrabold shadow-lg ring-1 ring-white/10 disabled:opacity-60"
-          >
-            {logging ? 'Logging…' : 'LOG TAP (GPS)'}
-          </button>
-
-          <div className="mt-4 rounded-2xl bg-purple-700/60 p-5 ring-1 ring-white/10">
-            {loading ? (
-              <div className="text-center text-sm opacity-80">Loading taps…</div>
-            ) : taps.length === 0 ? (
-              <div className="text-center text-sm font-semibold opacity-90">No taps yet.</div>
-            ) : (
-              <div className="space-y-3">
-                {taps.slice(0, 10).map((t) => (
-                  <div
-                    key={t.id}
-                    className="rounded-xl bg-slate-950/40 p-4 ring-1 ring-white/10"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="text-sm font-extrabold">{fmtPlace(t)}</div>
-                        <div className="mt-1 text-xs opacity-80">
-                          {t.tapped_at
-                            ? new Date(t.tapped_at).toLocaleString()
-                            : 'Time unknown'}
+                    return (
+                      <div key={t.id} className="rounded-2xl bg-white/5 border border-white/10 p-4">
+                        <div className="text-sm opacity-80">
+                          {when && !Number.isNaN(when.getTime())
+                            ? when.toLocaleString()
+                            : "Time unknown"}
                         </div>
-                      </div>
-
-                      <div className="text-right text-xs opacity-80">
-                        {t.lat != null && t.lng != null ? (
-                          <>
-                            <div>{t.lat.toFixed(4)}, {t.lng.toFixed(4)}</div>
-                            <div>{t.accuracy_m != null ? `±${t.accuracy_m}m` : ''}</div>
-                          </>
-                        ) : (
-                          <div>Coords missing</div>
+                        <div className="text-base font-semibold mt-1">{where}</div>
+                        {t.accuracy_m != null && (
+                          <div className="text-xs opacity-70 mt-1">
+                            Accuracy: {t.accuracy_m}m
+                          </div>
                         )}
                       </div>
-                    </div>
-                  </div>
-                ))}
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="mt-8">
+              <div className="text-lg font-bold opacity-90 mb-2">Campfire Story (Legend)</div>
+              <div className="rounded-2xl bg-purple-700/50 border border-white/10 p-5 text-center opacity-90">
+                It leaves a spark of curiosity wherever it travels.
               </div>
-            )}
+            </div>
           </div>
         </div>
 
-        {/* Campfire Story */}
-        <div className="mt-6">
-          <div className="mb-3 text-lg font-extrabold text-slate-200">Campfire Story (Legend)</div>
-          <div className="rounded-2xl bg-purple-700/70 p-5 text-center font-semibold ring-1 ring-white/10">
-            <div className="text-2xl">⭐</div>
-            <div className="mt-2">It leaves a spark of curiosity wherever it travels.</div>
-          </div>
-        </div>
-
-        <div className="mt-8 text-center text-xs opacity-60">
-          Showing up to 10 recent taps.
+        <div className="text-center text-xs opacity-60 mt-4">
+          /lighter/{lighterId}
         </div>
       </div>
     </div>
