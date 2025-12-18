@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useParams } from 'next/navigation'
 import { motion, useScroll, useTransform } from 'framer-motion'
 
 type Footprint = {
@@ -9,7 +10,13 @@ type Footprint = {
   accuracyLabel: string
 }
 
-export default function JourneyClient({ lighterId }: { lighterId: string }) {
+export default function JourneyClient() {
+  const params = useParams()
+  const lighterId =
+    (typeof (params as any)?.id === 'string' && (params as any).id) ||
+    (Array.isArray((params as any)?.id) && (params as any).id[0]) ||
+    'pilot-002'
+
   const currentHolder = 'Anonymous Traveller'
 
   const lastSeen = {
