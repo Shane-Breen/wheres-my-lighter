@@ -1,8 +1,15 @@
 'use client'
 
-// FORCE REDEPLOY — demo mode TapClient
-// updated: 2025-12-18T14:00Z
+/**
+ * TapClient
+ * ----------
+ * Demo-safe placeholder.
+ * No Supabase.
+ * No hooks.
+ * No side effects.
+ * Guaranteed build-safe.
+ */
 
-export default function TapClient() {
+export default function TapClient(): null {
   return null
 }
