@@ -1,19 +1,6 @@
 // lib/supabaseClient.ts
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+// DEMO MODE — Supabase disabled to allow UI + NFC flow development
 
-let cached: SupabaseClient | null = null;
-
-export function getSupabase(): SupabaseClient | null {
-  if (cached) return cached;
-
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-  if (!url || !anon) return null;
-
-  cached = createClient(url, anon, {
-    auth: { persistSession: true, autoRefreshToken: true },
-  });
-
-  return cached;
+export function getSupabase() {
+  return null as any
 }
