@@ -1,18 +1,18 @@
-import "./globals.css";
+import './globals.css'
 
 export const metadata = {
-  title: "Where’s My Lighter?",
-  description: "Track a lighter’s journey",
-};
+  title: "Where's My Lighter",
+  description: 'Lighter journeys, quietly remembered.',
+}
 
 export default function RootLayout({
   children,
 }: {
-  children: React.ReactNode;
+  children: React.ReactNode
 }) {
   return (
     <html lang="en">
       <body>{children}</body>
     </html>
-  );
+  )
 }
