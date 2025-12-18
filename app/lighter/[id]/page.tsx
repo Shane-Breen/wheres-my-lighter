@@ -2,13 +2,15 @@ import TapClient from "./TapClient";
 
 type PageProps = {
   params: Promise<{ id: string }>;
-  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+  searchParams: Promise<{ demo?: string | string[] }>;
 };
 
 export default async function Page({ params, searchParams }: PageProps) {
   const { id } = await params;
-  const sp = (await searchParams) ?? {};
-  const demo = sp.demo === "1";
+  const sp = await searchParams;
+
+  const demo =
+    sp?.demo === "1" || (Array.isArray(sp?.demo) && sp.demo.includes("1"));
 
   return <TapClient lighterId={id} demo={demo} />;
 }
