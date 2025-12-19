@@ -1,360 +1,457 @@
 // app/demo/page.tsx
-import Link from "next/link";
+"use client";
 
-type Lighter = {
+import React, { useEffect, useMemo, useState } from "react";
+import { getVisitorId } from "@/lib/visitorId";
+
+type ApiLighter = {
   id: string;
-  tapsCount: number;
-  birth: { city: string; country: string; dateLabel: string };
-  travel: { distanceKm: number; lastSeenCity: string; lastSeenCountry: string; lastSeenTimeLabel: string };
-  owners: { totalOwners: number; longestPossessionDays: number };
-  vibe: { archetype: string; pattern: string; style: string };
-  story: { title: string; oneLiner: string; description: string };
-  currentHolder: { displayName: string };
-  gasBottle: { threadCount: number; latestSnippet: string };
-  promo: { isRareActive: boolean; rareName: string; rarePrize: string };
+  archetype: string | null;
+  pattern: string | null;
+  style: string | null;
+  longest_possession_days: number;
+  total_owners: number;
+  total_distance_km: number;
+  birth: { city: string | null; country: string | null; tapped_at: string | null };
+  lastSeen: { city: string | null; country: string | null; tapped_at: string | null };
 };
 
-function clamp(n: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, n));
-}
+export default function DemoPage() {
+  // For demo, you can open: /demo?id=pilot-002
+  const lighterId = useMemo(() => {
+    if (typeof window === "undefined") return "pilot-002";
+    const url = new URL(window.location.href);
+    return url.searchParams.get("id") || "pilot-002";
+  }, []);
 
-/**
- * Placeholder "avatar generator" for demo:
- * - Before 5 taps: embryo
- * - After 5 taps: deterministic pixel sprite seeded by id
- *
- * When you wire this to real data later:
- * - Keep the rule: avatar appears only after tapsCount >= 5
- * - The generated avatar should be stored so it never changes
- */
-function seedFromString(s: string) {
-  let h = 2166136261;
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return h >>> 0;
-}
+  const [lighter, setLighter] = useState<ApiLighter | null>(null);
+  const [tapCount, setTapCount] = useState(0);
+  const [uniqueHolders, setUniqueHolders] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [tapStatus, setTapStatus] = useState<"idle" | "locating" | "posting" | "done" | "error">("idle");
 
-function makePixelGrid(seed: number) {
-  // 10x10 symmetrical pixel grid (left mirrors right)
-  const size = 10;
-  const grid: number[][] = Array.from({ length: size }, () => Array(size).fill(0));
-  let x = seed;
+  const hatched = uniqueHolders >= 5;
 
-  for (let r = 0; r < size; r++) {
-    for (let c = 0; c < Math.ceil(size / 2); c++) {
-      // pseudo-random bit
-      x = (x * 1664525 + 1013904223) >>> 0;
-      const on = (x % 100) < 42 ? 1 : 0;
-      grid[r][c] = on;
-      grid[r][size - 1 - c] = on;
+  async function fetchLighter() {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/lighter/${encodeURIComponent(lighterId)}`, { cache: "no-store" });
+      const json = await res.json();
+      if (json?.lighter) setLighter(json.lighter);
+      if (json?.computed) {
+        setTapCount(Number(json.computed.tap_count || 0));
+        setUniqueHolders(Number(json.computed.unique_holders || 0));
+      }
+    } finally {
+      setLoading(false);
     }
   }
 
-  // add a "pacman mouth" carve
-  for (let r = 4; r <= 6; r++) {
-    for (let c = 7; c <= 9; c++) grid[r][c] = 0;
-  }
-  return grid;
-}
-
-function PixelAvatar({
-  seed,
-  mode,
-}: {
-  seed: number;
-  mode: "embryo" | "born";
-}) {
-  if (mode === "embryo") {
-    return (
-      <div className="relative mx-auto flex h-40 w-40 items-center justify-center rounded-3xl bg-white/5 ring-1 ring-white/10">
-        <div className="absolute inset-0 rounded-3xl bg-gradient-to-b from-white/10 to-transparent" />
-        <div className="text-center">
-          <div className="mx-auto h-12 w-12 rounded-2xl bg-white/10 ring-1 ring-white/10" />
-          <div className="mt-3 text-sm font-medium text-white/80">Embryo</div>
-          <div className="mt-1 text-xs text-white/50">Needs 5 taps to hatch</div>
-        </div>
-      </div>
-    );
+  async function reverseGeocode(lat: number, lng: number) {
+    // Lightweight demo reverse geocode (OSM Nominatim). Consider server-side + caching later.
+    try {
+      const u = new URL("https://nominatim.openstreetmap.org/reverse");
+      u.searchParams.set("format", "jsonv2");
+      u.searchParams.set("lat", String(lat));
+      u.searchParams.set("lon", String(lng));
+      const r = await fetch(u.toString(), {
+        headers: {
+          // Nominatim prefers a UA, browsers restrict; referrer is usually enough for demo.
+          "Accept": "application/json"
+        }
+      });
+      const j = await r.json();
+      const addr = j?.address || {};
+      const city =
+        addr.city || addr.town || addr.village || addr.suburb || addr.county || null;
+      const country = addr.country || null;
+      return { city, country };
+    } catch {
+      return { city: null, country: null };
+    }
   }
 
-  const grid = makePixelGrid(seed);
-  const px = 10;
+  async function logTapAuto() {
+    const visitor_id = getVisitorId();
+
+    setTapStatus("locating");
+
+    // Request GPS (best effort)
+    const pos = await new Promise<GeolocationPosition | null>((resolve) => {
+      if (!navigator.geolocation) return resolve(null);
+      navigator.geolocation.getCurrentPosition(
+        (p) => resolve(p),
+        () => resolve(null),
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      );
+    });
+
+    const lat = pos?.coords?.latitude ?? null;
+    const lng = pos?.coords?.longitude ?? null;
+    const accuracy_m = pos?.coords?.accuracy ?? null;
+
+    let city: string | null = null;
+    let country: string | null = null;
+
+    if (typeof lat === "number" && typeof lng === "number") {
+      const rg = await reverseGeocode(lat, lng);
+      city = rg.city;
+      country = rg.country;
+    }
+
+    setTapStatus("posting");
+
+    const resp = await fetch(`/api/lighter/${encodeURIComponent(lighterId)}/tap`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ visitor_id, lat, lng, accuracy_m, city, country }),
+    });
+
+    if (!resp.ok) {
+      setTapStatus("error");
+      return;
+    }
+
+    setTapStatus("done");
+    await fetchLighter();
+  }
+
+  // AUTO TAP on page load (your “YES”)
+  useEffect(() => {
+    fetchLighter().then(() => logTapAuto());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const birthLabel = lighter?.birth?.city
+    ? `${lighter.birth.city}${lighter.birth.country ? `, ${lighter.birth.country}` : ""}`
+    : "Unknown";
+
+  const birthDate = lighter?.birth?.tapped_at
+    ? new Date(lighter.birth.tapped_at).toLocaleDateString(undefined, { month: "short", day: "2-digit" })
+    : "--";
+
+  const travelKm = Math.round(Number(lighter?.total_distance_km ?? 0));
+  const owners = Number(lighter?.total_owners ?? uniqueHolders ?? 0);
+
+  const archetypeTitle =
+    lighter?.style || lighter?.archetype || "Hidden Courier";
 
   return (
-    <div className="relative mx-auto flex h-40 w-40 items-center justify-center rounded-3xl bg-black/30 ring-1 ring-white/10">
-      <div className="absolute inset-0 rounded-3xl bg-gradient-to-b from-white/10 to-transparent" />
-      <div
-        className="grid"
-        style={{
-          gridTemplateColumns: `repeat(${px}, 1fr)`,
-          gridTemplateRows: `repeat(${px}, 1fr)`,
-          width: 110,
-          height: 110,
-        }}
-      >
-        {grid.flatMap((row, r) =>
-          row.map((cell, c) => (
-            <div
-              key={`${r}-${c}`}
-              className={
-                cell
-                  ? "bg-white/80"
-                  : "bg-transparent"
-              }
-              style={{ borderRadius: 2 }}
-            />
-          ))
-        )}
-      </div>
+    <div style={styles.page}>
+      <div style={styles.phone}>
+        {/* Top placeholder logo text */}
+        <div style={styles.logoWrap}>
+          <div style={styles.logoText}>Where’s My Lighter</div>
+        </div>
 
-      <div className="absolute -bottom-3 rounded-full bg-white/10 px-3 py-1 text-xs text-white/70 ring-1 ring-white/10">
-        8-bit hatchling
+        <div style={styles.cardSoft}>
+          <div style={styles.row}>
+            <div style={{ ...styles.smallLabel, flex: 1 }}>Hatching progress</div>
+            <div style={styles.smallLabel}>{Math.min(uniqueHolders, 5)}/5 taps</div>
+          </div>
+          <div style={styles.progressTrack}>
+            <div style={{ ...styles.progressFill, width: `${Math.min(uniqueHolders, 5) * 20}%` }} />
+          </div>
+          <div style={styles.hint}>
+            Avatar + archetype unlock after <b>5 unique taps</b>.
+          </div>
+        </div>
+
+        <div style={styles.grid}>
+          <button style={styles.tile} onClick={() => alert(`Birth:\n${birthLabel}\n${birthDate}`)}>
+            <div style={styles.tileTitle}>BIRTH</div>
+            <div style={styles.tileValue}>{birthLabel}</div>
+            <div style={styles.tileSub}>{birthDate}</div>
+          </button>
+
+          <button style={styles.tile} onClick={() => alert(`Owners Log:\n${owners} unique holders`)}>
+            <div style={styles.tileTitle}>OWNERS LOG</div>
+            <div style={styles.tileBig}>{String(owners).padStart(2, "0")}</div>
+            <div style={styles.tileSub}>Unique holders</div>
+          </button>
+
+          <button style={styles.tile} onClick={() => alert(`Travel Log:\n${travelKm} km (rounded)`)} >
+            <div style={styles.tileTitle}>TRAVEL LOG</div>
+            <div style={styles.tileBig}>{travelKm.toLocaleString()} km</div>
+            <div style={styles.tileSub}>Total distance</div>
+          </button>
+
+          <div style={styles.avatarWrap} aria-label="Avatar">
+            <div style={styles.avatarFrame}>
+              {hatched ? <PixelAvatar /> : <Embryo />}
+            </div>
+            <div style={styles.avatarCaption}>{hatched ? "8-bit hatchling" : "Embryo"}</div>
+          </div>
+        </div>
+
+        <details style={styles.details} open>
+          <summary style={styles.summary}>
+            <div style={styles.summaryTitle}>{archetypeTitle}</div>
+            <div style={styles.chev}>▾</div>
+          </summary>
+          <div style={styles.detailLines}>
+            <div style={styles.bulletLine}>
+              <span style={styles.bullet}>•</span>
+              <span style={styles.detailKey}>Archetype</span>
+              <span style={styles.detailVal}>{lighter?.archetype ?? "— (hatches at 5 taps)"}</span>
+            </div>
+            <div style={styles.bulletLine}>
+              <span style={styles.bullet}>•</span>
+              <span style={styles.detailKey}>Pattern</span>
+              <span style={styles.detailVal}>{lighter?.pattern ?? "—"}</span>
+            </div>
+            <div style={styles.bulletLine}>
+              <span style={styles.bullet}>•</span>
+              <span style={styles.detailKey}>Style</span>
+              <span style={styles.detailVal}>{lighter?.style ?? "—"}</span>
+            </div>
+            <div style={styles.bulletLine}>
+              <span style={styles.bullet}>•</span>
+              <span style={styles.detailKey}>Longest streak</span>
+              <span style={styles.detailVal}>{(lighter?.longest_possession_days ?? 0)} days</span>
+            </div>
+          </div>
+        </details>
+
+        <div style={styles.join}>
+          <div style={styles.joinTitle}>Join the journey (optional)</div>
+          <div style={styles.joinCopy}>
+            Create a profile to appear in the Owners Log. No account required to tap — only to connect.
+          </div>
+        </div>
+
+        <div style={styles.actions}>
+          <button
+            style={styles.actionBtn}
+            onClick={() => alert("Create Profile: next step is Supabase Auth + profiles table.")}
+          >
+            Create Profile
+          </button>
+          <button
+            style={styles.actionBtnAlt}
+            onClick={() => logTapAuto()}
+            title="Logs a tap without requiring signup"
+          >
+            Tap Without Profile
+          </button>
+        </div>
+
+        <div style={styles.footer}>
+          <div>
+            {loading ? "Loading..." : `Taps: ${tapCount} • Unique holders: ${uniqueHolders}`}
+          </div>
+          <div>
+            Tap status: <b>{tapStatus}</b>
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
-function StatButton({
-  title,
-  value,
-  helper,
-}: {
-  title: string;
-  value: string;
-  helper?: string;
-}) {
+/** Simple “pixel-ish” placeholders (no external images) */
+function Embryo() {
   return (
-    <button
-      type="button"
-      className="group w-full rounded-2xl bg-white/5 p-4 text-left ring-1 ring-white/10 transition hover:bg-white/7"
-    >
-      <div className="text-[11px] font-semibold tracking-wide text-white/60">
-        {title.toUpperCase()}
-      </div>
-      <div className="mt-1 text-base font-semibold text-white">{value}</div>
-      {helper ? (
-        <div className="mt-1 text-xs text-white/50 group-hover:text-white/60">
-          {helper}
-        </div>
-      ) : null}
-    </button>
-  );
-}
-
-export default function DemoPage() {
-  // Demo data (swap for Supabase later)
-  const lighter: Lighter = {
-    id: "pilot-002",
-    tapsCount: 3, // change to 5+ to see the avatar hatch
-    birth: { city: "Cork", country: "Ireland", dateLabel: "Jun 21" },
-    travel: { distanceKm: 2930, lastSeenCity: "Dublin", lastSeenCountry: "Ireland", lastSeenTimeLabel: "Wed 00:43" },
-    owners: { totalOwners: 3, longestPossessionDays: 7 },
-    vibe: { archetype: "The Night Traveller", pattern: "Nocturnal", style: "Hidden Courier" },
-    story: {
-      title: "Message in a Gas Bottle",
-      oneLiner: "Leave a note. Find a friend. Pass it on.",
-      description:
-        "Every owner can drop a short message into the bottle—something they’d want the next holder to read. Over time, the bottle becomes a tiny map of strangers becoming real people.",
-    },
-    currentHolder: { displayName: "Hidden Courier" },
-    gasBottle: { threadCount: 2, latestSnippet: "Left this lighter outside a gig. Keep it moving." },
-    promo: { isRareActive: true, rareName: "Willy Wonka", rarePrize: "Win a world trip (concept promo)" },
-  };
-
-  const born = lighter.tapsCount >= 5;
-  const progress = clamp((lighter.tapsCount / 5) * 100, 0, 100);
-  const seed = seedFromString(lighter.id);
-
-  return (
-    <div className="min-h-screen bg-[#05060f]">
-      {/* background glow */}
-      <div className="pointer-events-none fixed inset-0">
-        <div className="absolute -top-40 left-1/2 h-[520px] w-[820px] -translate-x-1/2 rounded-full bg-purple-600/20 blur-3xl" />
-        <div className="absolute bottom-[-200px] right-[-200px] h-[520px] w-[520px] rounded-full bg-indigo-500/15 blur-3xl" />
-      </div>
-
-      <main className="relative mx-auto max-w-md px-4 pb-12 pt-10">
-        <header className="text-center">
-          <div className="text-sm font-semibold tracking-wide text-white/60">
-            LIGHTER
-          </div>
-          <h1 className="mt-2 text-2xl font-semibold text-white">
-            {born ? "This Lighter’s Journey" : "A Lighter, Still Becoming"}
-          </h1>
-          <p className="mt-2 text-sm text-white/60">
-            Tap to add a sighting. Profiles are optional—connection isn’t.
-          </p>
-        </header>
-
-        {/* Top summary card */}
-        <section className="mt-6 rounded-3xl bg-white/5 p-5 ring-1 ring-white/10">
-          <div className="flex items-start justify-between">
-            <div>
-              <div className="text-xs font-semibold tracking-wide text-white/60">
-                LIGHTER ID
-              </div>
-              <div className="mt-1 text-lg font-semibold text-white">{lighter.id}</div>
-            </div>
-
-            <div className="text-right">
-              <div className="text-xs font-semibold tracking-wide text-white/60">
-                CURRENT HOLDER
-              </div>
-              <div className="mt-1 text-sm font-semibold text-white">
-                {lighter.currentHolder.displayName}
-              </div>
-            </div>
-          </div>
-
-          {/* Hatch meter */}
-          <div className="mt-4">
-            <div className="flex items-center justify-between text-xs text-white/60">
-              <span>Hatching progress</span>
-              <span>
-                {lighter.tapsCount}/5 taps
-              </span>
-            </div>
-            <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-black/40 ring-1 ring-white/10">
-              <div
-                className="h-full rounded-full bg-white/70"
-                style={{ width: `${progress}%` }}
-              />
-            </div>
-            <div className="mt-2 text-xs text-white/50">
-              {born
-                ? "Avatar is born and will never change."
-                : "Avatar + archetype unlock after 5 unique taps."}
-            </div>
-          </div>
-        </section>
-
-        {/* 2 rows of 3 info buttons */}
-        <section className="mt-5 grid grid-cols-3 gap-3">
-          <StatButton
-            title="Birth"
-            value={`${lighter.birth.city}, ${lighter.birth.country}`}
-            helper={lighter.birth.dateLabel}
-          />
-          <StatButton
-            title="Travel Log"
-            value={`${lighter.travel.distanceKm.toLocaleString()} km`}
-            helper="Total distance"
-          />
-          <StatButton
-            title="Owners Log"
-            value={`${lighter.owners.totalOwners}`}
-            helper="Unique holders"
-          />
-
-          <StatButton
-            title="Story"
-            value={born ? lighter.vibe.archetype : "Locked"}
-            helper={born ? `${lighter.vibe.pattern} • ${lighter.vibe.style}` : "Unlocks after 5 taps"}
-          />
-          <StatButton
-            title="Longest Streak"
-            value={`${lighter.owners.longestPossessionDays} days`}
-            helper="Best run"
-          />
-          <StatButton
-            title="Gas Bottle"
-            value={`${lighter.gasBottle.threadCount} msgs`}
-            helper={`“${lighter.gasBottle.latestSnippet}”`}
-          />
-        </section>
-
-        {/* Avatar center */}
-        <section className="mt-6">
-          <PixelAvatar seed={seed} mode={born ? "born" : "embryo"} />
-        </section>
-
-        {/* Archetype / pattern / style block */}
-        <section className="mt-6 rounded-3xl bg-white/5 p-5 ring-1 ring-white/10">
-          <div className="text-xs font-semibold tracking-wide text-white/60">
-            ARCHETYPE • PATTERN • STYLE
-          </div>
-
-          {born ? (
-            <div className="mt-3 space-y-2 text-white">
-              <div>
-                <span className="text-white/70">Archetype:</span>{" "}
-                <span className="font-semibold">{lighter.vibe.archetype}</span>
-              </div>
-              <div>
-                <span className="text-white/70">Pattern:</span>{" "}
-                <span className="font-semibold">{lighter.vibe.pattern}</span>
-              </div>
-              <div>
-                <span className="text-white/70">Style:</span>{" "}
-                <span className="font-semibold">{lighter.vibe.style}</span>
-              </div>
-
-              <div className="mt-4 rounded-2xl bg-black/25 p-4 ring-1 ring-white/10">
-                <div className="text-sm font-semibold text-white">
-                  {lighter.story.title}
-                </div>
-                <div className="mt-1 text-sm text-white/70">
-                  {lighter.story.oneLiner}
-                </div>
-                <div className="mt-3 text-sm text-white/60">
-                  {lighter.story.description}
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="mt-3 text-sm text-white/60">
-              Not enough journey data yet. Once this lighter hits <b>5 taps</b>, it hatches with a fixed archetype and avatar.
-            </div>
-          )}
-        </section>
-
-        {/* Profile encouragement (no wall) */}
-        <section className="mt-6 rounded-3xl bg-white/5 p-5 ring-1 ring-white/10">
-          <div className="text-sm font-semibold text-white">Join the journey (optional)</div>
-          <p className="mt-2 text-sm text-white/60">
-            Create a profile to appear in the Owners Log and to message past holders. No account required to tap—only to connect.
-          </p>
-
-          <div className="mt-4 grid grid-cols-2 gap-3">
-            <button className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-semibold text-white ring-1 ring-white/10 hover:bg-white/15">
-              Create Profile
-            </button>
-            <button className="rounded-2xl bg-black/30 px-4 py-3 text-sm font-semibold text-white/80 ring-1 ring-white/10 hover:bg-black/40">
-              Tap Without Profile
-            </button>
-          </div>
-        </section>
-
-        {/* Promo concept */}
-        <section className="mt-6 rounded-3xl bg-white/5 p-5 ring-1 ring-white/10">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className="text-sm font-semibold text-white">Promo Concept</div>
-              <p className="mt-2 text-sm text-white/60">
-                Rare hatch: <b>{lighter.promo.rareName}</b>. If you collect this avatar after embryo stage, you win:{" "}
-                <b>{lighter.promo.rarePrize}</b>.
-              </p>
-            </div>
-            <div className="rounded-2xl bg-white/10 px-3 py-2 text-xs font-semibold text-white/80 ring-1 ring-white/10">
-              {lighter.promo.isRareActive ? "LIVE" : "OFF"}
-            </div>
-          </div>
-        </section>
-
-        <footer className="mt-10 text-center text-xs text-white/40">
-          <p>
-            Demo page. Later: wire buttons to real DB + NFC tap events.
-          </p>
-          <p className="mt-2">
-            Try:{" "}
-            <Link className="text-white/60 underline" href="/lighter/pilot-002">
-              /lighter/pilot-002
-            </Link>
-          </p>
-        </footer>
-      </main>
+    <div style={styles.embryo}>
+      <div style={styles.embryoDot} />
+      <div style={{ ...styles.embryoDot, opacity: 0.6 }} />
+      <div style={{ ...styles.embryoDot, opacity: 0.35 }} />
     </div>
   );
 }
+
+function PixelAvatar() {
+  // cute 8-bit vibe block avatar (placeholder; later we can generate real ones)
+  return (
+    <div style={styles.pixelAvatar}>
+      <div style={styles.pixelMoon} />
+      <div style={styles.pixelBody} />
+      <div style={styles.pixelFace} />
+    </div>
+  );
+}
+
+const styles: Record<string, React.CSSProperties> = {
+  page: {
+    minHeight: "100vh",
+    display: "grid",
+    placeItems: "center",
+    padding: 24,
+    background: "radial-gradient(1200px 900px at 50% 20%, rgba(150,80,255,0.30), rgba(10,10,20,1))",
+    fontFamily: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial",
+    color: "rgba(255,255,255,0.92)",
+  },
+  phone: {
+    width: 360,
+    maxWidth: "92vw",
+    borderRadius: 24,
+    padding: 16,
+    background: "linear-gradient(180deg, rgba(40,20,70,0.65), rgba(15,12,30,0.85))",
+    border: "1px solid rgba(255,255,255,0.10)",
+    boxShadow: "0 30px 80px rgba(0,0,0,0.55)",
+  },
+  logoWrap: {
+    borderRadius: 18,
+    padding: "14px 14px 10px",
+    marginBottom: 12,
+    background: "linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02))",
+    border: "1px solid rgba(255,255,255,0.10)",
+  },
+  logoText: {
+    textAlign: "center",
+    fontWeight: 800,
+    letterSpacing: 0.2,
+    fontSize: 18,
+  },
+  cardSoft: {
+    borderRadius: 18,
+    padding: 12,
+    marginBottom: 12,
+    background: "linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02))",
+    border: "1px solid rgba(255,255,255,0.10)",
+  },
+  row: { display: "flex", alignItems: "center", gap: 8 },
+  smallLabel: { fontSize: 12, opacity: 0.85 },
+  progressTrack: {
+    height: 10,
+    borderRadius: 999,
+    background: "rgba(255,255,255,0.10)",
+    overflow: "hidden",
+    marginTop: 8,
+  },
+  progressFill: {
+    height: "100%",
+    borderRadius: 999,
+    background: "linear-gradient(90deg, rgba(180,110,255,1), rgba(120,70,255,1))",
+  },
+  hint: { fontSize: 12, marginTop: 8, opacity: 0.8 },
+  grid: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: 10,
+    marginBottom: 12,
+    alignItems: "stretch",
+  },
+  tile: {
+    borderRadius: 18,
+    padding: 12,
+    textAlign: "left",
+    background: "linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02))",
+    border: "1px solid rgba(255,255,255,0.10)",
+    color: "rgba(255,255,255,0.92)",
+    cursor: "pointer",
+  },
+  tileTitle: { fontSize: 12, letterSpacing: 1.2, opacity: 0.85 },
+  tileValue: { marginTop: 8, fontWeight: 700, fontSize: 14, lineHeight: 1.15 },
+  tileBig: { marginTop: 8, fontWeight: 800, fontSize: 22, lineHeight: 1 },
+  tileSub: { marginTop: 6, fontSize: 12, opacity: 0.8 },
+  avatarWrap: {
+    gridColumn: "1 / -1",
+    borderRadius: 18,
+    padding: 12,
+    background: "linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02))",
+    border: "1px solid rgba(255,255,255,0.10)",
+    display: "grid",
+    placeItems: "center",
+  },
+  avatarFrame: {
+    width: 140,
+    height: 140,
+    borderRadius: 16,
+    border: "1px solid rgba(255,255,255,0.14)",
+    background: "rgba(0,0,0,0.25)",
+    display: "grid",
+    placeItems: "center",
+    boxShadow: "inset 0 0 0 2px rgba(180,110,255,0.15)",
+  },
+  avatarCaption: { marginTop: 10, fontSize: 12, opacity: 0.85 },
+  embryo: { display: "flex", gap: 10, alignItems: "center" },
+  embryoDot: {
+    width: 18,
+    height: 18,
+    borderRadius: 999,
+    background: "rgba(180,110,255,0.9)",
+    boxShadow: "0 0 18px rgba(180,110,255,0.45)",
+  },
+  pixelAvatar: { position: "relative", width: 96, height: 96 },
+  pixelMoon: {
+    position: "absolute",
+    left: 6,
+    top: 6,
+    width: 26,
+    height: 26,
+    borderRadius: 999,
+    background: "rgba(255,215,120,0.9)",
+    boxShadow: "0 0 16px rgba(255,215,120,0.25)",
+  },
+  pixelBody: {
+    position: "absolute",
+    left: 22,
+    top: 30,
+    width: 52,
+    height: 56,
+    borderRadius: 10,
+    background: "rgba(130,80,255,0.85)",
+    border: "1px solid rgba(255,255,255,0.12)",
+  },
+  pixelFace: {
+    position: "absolute",
+    left: 34,
+    top: 42,
+    width: 28,
+    height: 22,
+    borderRadius: 8,
+    background: "rgba(255,255,255,0.12)",
+    border: "1px solid rgba(255,255,255,0.10)",
+  },
+  details: {
+    borderRadius: 18,
+    padding: 12,
+    background: "linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02))",
+    border: "1px solid rgba(255,255,255,0.10)",
+    marginBottom: 12,
+  },
+  summary: {
+    listStyle: "none",
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  summaryTitle: { fontSize: 16, fontWeight: 800 },
+  chev: { opacity: 0.8 },
+  detailLines: { marginTop: 10, display: "grid", gap: 8 },
+  bulletLine: { display: "grid", gridTemplateColumns: "14px 92px 1fr", gap: 8, alignItems: "center" },
+  bullet: { opacity: 0.9 },
+  detailKey: { fontSize: 12, opacity: 0.85 },
+  detailVal: { fontSize: 12, fontWeight: 650, opacity: 0.95 },
+  join: {
+    borderRadius: 18,
+    padding: 12,
+    background: "linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02))",
+    border: "1px solid rgba(255,255,255,0.10)",
+    marginBottom: 12,
+  },
+  joinTitle: { fontWeight: 800, marginBottom: 6 },
+  joinCopy: { fontSize: 12, opacity: 0.85, lineHeight: 1.35 },
+  actions: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 },
+  actionBtn: {
+    borderRadius: 999,
+    padding: "12px 12px",
+    border: "1px solid rgba(255,255,255,0.14)",
+    background: "linear-gradient(90deg, rgba(180,110,255,0.95), rgba(120,70,255,0.95))",
+    color: "rgba(255,255,255,0.95)",
+    fontWeight: 800,
+    cursor: "pointer",
+  },
+  actionBtnAlt: {
+    borderRadius: 999,
+    padding: "12px 12px",
+    border: "1px solid rgba(255,255,255,0.14)",
+    background: "rgba(255,255,255,0.06)",
+    color: "rgba(255,255,255,0.95)",
+    fontWeight: 800,
+    cursor: "pointer",
+  },
+  footer: { marginTop: 12, fontSize: 12, opacity: 0.75, display: "flex", justifyContent: "space-between" },
+};
