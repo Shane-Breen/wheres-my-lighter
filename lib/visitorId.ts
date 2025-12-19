@@ -1,21 +1,47 @@
 // lib/visitorId.ts
-export function getVisitorId(): string {
+"use client";
+
+/**
+ * Stable, anonymous visitor ID stored in localStorage.
+ * Used to count unique holders without forcing signup.
+ */
+export function getOrCreateVisitorId(): string {
   if (typeof window === "undefined") return "server";
 
   const KEY = "wml_visitor_id";
   const existing = window.localStorage.getItem(KEY);
   if (existing) return existing;
 
-  const id = safeUuid();
+  const id = uuidv4();
   window.localStorage.setItem(KEY, id);
   return id;
 }
 
-function safeUuid(): string {
-  const c = (globalThis as any).crypto as Crypto | undefined;
-  if (c?.randomUUID) return c.randomUUID();
+function uuidv4(): string {
+  // Prefer Web Crypto UUID if available
+  const c: Crypto | undefined = typeof crypto !== "undefined" ? crypto : undefined;
 
-  // Fallback UUID-ish (stable enough for visitor_id)
-  const rnd = () => Math.floor(Math.random() * 0xffffffff).toString(16).padStart(8, "0");
-  return `${rnd().slice(0, 8)}-${rnd().slice(0, 4)}-4${rnd().slice(0, 3)}-a${rnd().slice(0, 3)}-${rnd().slice(0, 12)}`;
+  // @ts-expect-error randomUUID may not exist in some TS libs depending on config
+  if (c && typeof c.randomUUID === "function") return c.randomUUID();
+
+  // Fallback to RFC4122 v4 using getRandomValues
+  if (c && typeof c.getRandomValues === "function") {
+    const bytes = new Uint8Array(16);
+    c.getRandomValues(bytes);
+
+    bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
+    bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant 10
+
+    const hex = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+    return [
+      hex.slice(0, 8),
+      hex.slice(8, 12),
+      hex.slice(12, 16),
+      hex.slice(16, 20),
+      hex.slice(20),
+    ].join("-");
+  }
+
+  // Last-resort fallback (still stable once stored)
+  return `wml_${Math.random().toString(16).slice(2)}_${Date.now().toString(16)}`;
 }
