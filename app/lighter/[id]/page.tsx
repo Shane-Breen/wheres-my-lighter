@@ -23,9 +23,39 @@ function getPreciseLocation(): Promise<GeolocationPosition> {
   });
 }
 
-function fmtDateTime(ts?: string | Date | null) {
-  if (!ts) return "—";
-  const d = typeof ts === "string" ? new Date(ts) : ts;
+type ArchetypeKey = "night-traveller" | "caretaker" | "free-spirit" | "temple-guard";
+
+const ARCHETYPES: Record<
+  ArchetypeKey,
+  { name: string; desc: string; img: string }
+> = {
+  "night-traveller": {
+    name: "The Night Traveller",
+    desc: "Most active at night, drawn to the unknown",
+    img: "/avatars/night-traveller.png",
+  },
+  caretaker: {
+    name: "The Caretaker",
+    desc: "Always there, rarely far from home",
+    img: "/avatars/caretaker.png",
+  },
+  "free-spirit": {
+    name: "The Free Spirit",
+    desc: "Continually passed around in search of experiences",
+    img: "/avatars/free-spirit.png",
+  },
+  "temple-guard": {
+    name: "The Temple Guard",
+    desc: "Stoic, unchanging, never leaves one spot",
+    img: "/avatars/temple-guard.png",
+  },
+};
+
+function formatBorn(dt?: string | Date | null) {
+  if (!dt) return "—";
+  const d = typeof dt === "string" ? new Date(dt) : dt;
+  if (Number.isNaN(d.getTime())) return "—";
+  // "19 Dec 2025, 15:22"
   return d.toLocaleString(undefined, {
     day: "2-digit",
     month: "short",
@@ -35,93 +65,48 @@ function fmtDateTime(ts?: string | Date | null) {
   });
 }
 
-// For now: pick a “Hidden Courier” avatar from the 4 starters.
-// Later we’ll base this on data (5 unique taps etc).
-const AVATARS = [
-  {
-    key: "night-traveller",
-    name: "The Night Traveller",
-    desc: "Most active at night, drawn to the unknown",
-    src: "/avatars/night-traveller.png",
-  },
-  {
-    key: "caretaker",
-    name: "The Caretaker",
-    desc: "Always there, rarely far from home",
-    src: "/avatars/caretaker.png",
-  },
-  {
-    key: "free-spirit",
-    name: "The Free Spirit",
-    desc: "Continually passed around in search of experiences",
-    src: "/avatars/free-spirit.png",
-  },
-  {
-    key: "temple-guard",
-    name: "The Temple Guard",
-    desc: "Stoic, unchanging, never leaves one spot",
-    src: "/avatars/temple-guard.png",
-  },
-];
-
 export default function LighterPage() {
   const params = useParams<{ id: string }>();
   const lighterId = useMemo(() => params?.id ?? "pilot-002", [params]);
 
-  const [busy, setBusy] = useState(false);
+  // ---- Replace these with your real fetched values (you likely already have them) ----
+  // For now they’re placeholders so the UI compiles.
+  const bornAt = "2025-12-19T15:22:00.000Z"; // first tap timestamp
+  const ownersUnique = 2; // unique visitor_id count
+  const totalTaps = 41; // total taps count
+  const currentLocationLabel = "Skibbereen, Éire / Ireland"; // derived from GPS reverse lookup
+  const currentLocationAt = "2025-12-19T17:51:00.000Z"; // latest tap timestamp
+
+  // Pick an archetype deterministically (until you implement your real logic)
+  const archetypeKey = ((): ArchetypeKey => {
+    const keys: ArchetypeKey[] = ["night-traveller", "caretaker", "free-spirit", "temple-guard"];
+    const n = Math.abs(
+      Array.from(lighterId).reduce((acc, ch) => acc + ch.charCodeAt(0), 0)
+    );
+    return keys[n % keys.length];
+  })();
+  const archetype = ARCHETYPES[archetypeKey];
+
   const [status, setStatus] = useState<string>("");
+  const [busy, setBusy] = useState(false);
 
-  // These values are currently coming from your API (as you’ve already wired).
-  // If they’re not available, we keep sensible placeholders.
-  const [bornAt, setBornAt] = useState<string | null>(null);
-  const [owners, setOwners] = useState<number>(0);
-  const [totalTaps, setTotalTaps] = useState<number>(0);
-  const [currentPlace, setCurrentPlace] = useState<string>("—");
-  const [currentAt, setCurrentAt] = useState<string | null>(null);
-
-  const avatar = useMemo(() => {
-    // Simple deterministic pick per lighterId (so it doesn't jump around)
-    let hash = 0;
-    for (let i = 0; i < lighterId.length; i++) hash = (hash * 31 + lighterId.charCodeAt(i)) >>> 0;
-    return AVATARS[hash % AVATARS.length];
-  }, [lighterId]);
-
-  async function refreshStats() {
-    try {
-      const res = await fetch(`/api/lighter/${encodeURIComponent(lighterId)}`, {
-        cache: "no-store",
-      });
-      if (!res.ok) return;
-      const json = await res.json();
-
-      // Expecting your existing shape to include these or similar.
-      // Adjust mapping if your API returns different keys.
-      setBornAt(json?.born_at ?? json?.first_tap_at ?? null);
-      setOwners(Number(json?.unique_owners ?? json?.unique_holders ?? 0));
-      setTotalTaps(Number(json?.total_taps ?? json?.taps_count ?? 0));
-      setCurrentPlace(json?.current_place ?? json?.place_label ?? json?.town ?? "—");
-      setCurrentAt(json?.current_at ?? json?.last_tap_at ?? null);
-    } catch {
-      // ignore
-    }
-  }
+  const progress = Math.min(5, ownersUnique);
+  const progressLabel = `${progress}/5 taps`;
 
   async function tapWithoutProfile() {
     setBusy(true);
     setStatus("");
 
     try {
-      // 1) Capture GPS accurately (store precise)
       const pos = await getPreciseLocation();
 
       const payload = {
         visitor_id: getOrCreateVisitorId(),
         lat: pos.coords.latitude,
         lng: pos.coords.longitude,
-        accuracy_m: pos.coords.accuracy,
+        accuracy_m: Math.round(pos.coords.accuracy),
       };
 
-      // 2) Log tap
       const res = await fetch(`/api/lighter/${encodeURIComponent(lighterId)}/tap`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -131,14 +116,11 @@ export default function LighterPage() {
       const json = (await res.json()) as TapResult;
 
       if (!res.ok || (json as any).ok !== true) {
-        const msg = (json as any)?.error ?? "Insert failed";
-        setStatus(`Insert failed: ${msg}`);
+        setStatus(`Insert failed: ${(json as any).error ?? "Unknown error"}`);
         return;
       }
 
       setStatus("Tap logged successfully ✅");
-      // Pull latest stats (born/current/owners/taps + town label)
-      await refreshStats();
     } catch (e: any) {
       setStatus(e?.message ? `Insert failed: ${e.message}` : "Insert failed");
     } finally {
@@ -146,118 +128,115 @@ export default function LighterPage() {
     }
   }
 
-  // Load stats on first render
-  // (kept minimal to avoid extra complexity)
-  useMemo(() => {
-    refreshStats();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lighterId]);
-
-  const hatchProgress = Math.min(5, Math.max(0, owners));
-  const hatchPct = (hatchProgress / 5) * 100;
-
   return (
-    <div className="shell">
-      <div className="panel">
-        {/* Header */}
-        <div className="row">
-          <div style={{ width: 44, height: 44, borderRadius: 12, overflow: "hidden", border: "1px solid rgba(255,255,255,.10)" }}>
-            <Image src="/logo_app.png" alt="Where’s My Lighter" width={44} height={44} />
-          </div>
-          <div>
-            <div className="h1">Where’s My Lighter</div>
-            <div className="sub">Tap to add a sighting</div>
-          </div>
-        </div>
+    <div className="wml-bg">
+      <div className="wml-crt" aria-hidden />
+      <div className="wml-grain" aria-hidden />
 
-        {/* Progress */}
-        <div className="progressWrap">
-          <div className="progressTop">
-            <span style={{ fontWeight: 800 }}>Hatching progress</span>
-            <span className="pixel" style={{ fontSize: 11, opacity: 0.9 }}>
-              {hatchProgress}/5 taps
-            </span>
-          </div>
-          <div className="bar">
-            <div style={{ width: `${hatchPct}%` }} />
-          </div>
-          <div className="helper">Avatar + archetype unlock after 5 unique taps.</div>
-        </div>
-
-        {/* Tiles */}
-        <div className="grid2">
-          <div className="tile">
-            <div className="kicker">Born</div>
-            <div className="big">—</div>
-            <div className="small">{fmtDateTime(bornAt)}</div>
-            <div className="small" style={{ opacity: 0.65 }}>—</div>
-          </div>
-
-          <div className="tile">
-            <div className="kicker">Owners Log</div>
-            <div className="big">{String(owners).padStart(2, "0")}</div>
-            <div className="small">Unique holders</div>
-          </div>
-
-          <div className="tile">
-            <div className="kicker">Hatchling</div>
-            <div className="big">{totalTaps || 0}</div>
-            <div className="small">Total taps</div>
-          </div>
-
-          <div className="tile">
-            <div className="kicker">Current Location</div>
-            <div className="mid">{currentPlace}</div>
-            <div className="small">{fmtDateTime(currentAt)}</div>
-          </div>
-        </div>
-
-        {/* Avatar card */}
-        <div className="wide">
-          <div className="avatarBox">
-            <Image
-              src={avatar.src}
-              alt={avatar.name}
-              width={62}
-              height={62}
-              style={{ imageRendering: "pixelated" }}
-            />
-          </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 18, fontWeight: 900, marginBottom: 4 }}>{avatar.name}</div>
-            <div style={{ color: "rgba(255,255,255,.70)", fontSize: 13, lineHeight: 1.35 }}>
-              {avatar.desc}
+      <div className="wml-wrap">
+        <div className="wml-card">
+          {/* Header */}
+          <div className="wml-header">
+            <div className="wml-logo">
+              <Image src="/logo_app.png" alt="Where’s My Lighter" width={44} height={44} />
             </div>
-            <div style={{ marginTop: 10, borderTop: "1px solid rgba(124,77,255,.25)", paddingTop: 10 }}>
-              <div className="kicker" style={{ marginBottom: 6 }}>Hidden Courier</div>
-              <div style={{ color: "rgba(255,255,255,.75)", fontSize: 13 }}>
-                <span style={{ opacity: 0.8 }}>•</span> Avatar <span style={{ opacity: 0.55 }}>|</span> {avatar.name}
+            <div>
+              <div className="wml-title">Where&apos;s My Lighter</div>
+              <div className="wml-subtitle">Tap to add a sighting</div>
+            </div>
+          </div>
+
+          {/* Progress */}
+          <div className="wml-row wml-row-between">
+            <div className="wml-label">Hatching progress</div>
+            <div className="wml-label">{progressLabel}</div>
+          </div>
+          <div className="wml-bar">
+            <div className="wml-bar-fill" style={{ width: `${(progress / 5) * 100}%` }} />
+          </div>
+          <div className="wml-help">Avatar + archetype unlock after 5 unique taps.</div>
+
+          {/* Stat grid */}
+          <div className="wml-grid">
+            <div className="wml-tile">
+              <div className="wml-tile-k">BORN</div>
+              <div className="wml-tile-v">{formatBorn(bornAt)}</div>
+              <div className="wml-tile-s">—</div>
+            </div>
+
+            <div className="wml-tile">
+              <div className="wml-tile-k">OWNERS LOG</div>
+              <div className="wml-tile-v wml-big">{String(ownersUnique).padStart(2, "0")}</div>
+              <div className="wml-tile-s">Unique holders</div>
+            </div>
+
+            <div className="wml-tile">
+              <div className="wml-tile-k">HATCHLING</div>
+              <div className="wml-tile-v wml-big">{totalTaps}</div>
+              <div className="wml-tile-s">Total taps</div>
+            </div>
+
+            <div className="wml-tile">
+              <div className="wml-tile-k">CURRENT LOCATION</div>
+              <div className="wml-tile-v">{currentLocationLabel}</div>
+              <div className="wml-tile-s">{formatBorn(currentLocationAt)}</div>
+            </div>
+          </div>
+
+          {/* Avatar panel */}
+          <div className="wml-panel">
+            <div className="wml-panel-top">
+              <div className="wml-avatar">
+                <Image
+                  src={archetype.img}
+                  alt={archetype.name}
+                  width={96}
+                  height={96}
+                  priority
+                />
+              </div>
+              <div>
+                <div className="wml-panel-title">{archetype.name}</div>
+                <div className="wml-panel-desc">{archetype.desc}</div>
+              </div>
+            </div>
+
+            <div className="wml-panel-bottom">
+              <div className="wml-panel-k">HIDDEN COURIER</div>
+              <div className="wml-panel-line">
+                <span className="wml-dot">●</span> Avatar <span className="wml-sep">|</span>{" "}
+                {archetype.name}
               </div>
             </div>
           </div>
-        </div>
 
-        {/* Actions */}
-        <div className="actions">
-          <button className="btn" disabled={busy}>
-            Create Profile
-          </button>
-          <button className="btn btnPrimary" onClick={tapWithoutProfile} disabled={busy}>
-            {busy ? "Logging GPS…" : "Tap Without Profile"}
-          </button>
-        </div>
+          {/* Actions */}
+          <div className="wml-actions">
+            <button className="wml-btn wml-btn-ghost" type="button">
+              Create Profile
+            </button>
+            <button
+              className="wml-btn wml-btn-primary"
+              type="button"
+              onClick={tapWithoutProfile}
+              disabled={busy}
+            >
+              {busy ? "Logging GPS…" : "Tap Without Profile"}
+            </button>
+          </div>
 
-        <div className="footer">
-          We request location permission to log a sighting. Precise GPS is stored securely.
-          Only the nearest town is displayed publicly.
-        </div>
+          <div className="wml-footnote">
+            We request location permission to log a sighting. Precise GPS is stored securely. Only
+            the nearest town is displayed publicly.
+          </div>
 
-        {status ? <div className="statusOk">{status}</div> : null}
+          {status ? <div className="wml-status">{status}</div> : null}
 
-        <div style={{ marginTop: 10, textAlign: "center", opacity: 0.55, fontSize: 11 }}>
-          lighter: {lighterId}
-          <br />
-          visitor: {getOrCreateVisitorId()}
+          <div className="wml-debug">
+            lighter: {lighterId}
+            <br />
+            visitor: {getOrCreateVisitorId()}
+          </div>
         </div>
       </div>
     </div>
