@@ -81,7 +81,7 @@ export default function LighterPage() {
     setStatus("");
 
     try {
-      // Force GPS capture FIRST (your requirement)
+      // GPS FIRST (your requirement)
       const pos = await getPreciseLocation();
 
       const payload = {
@@ -100,18 +100,14 @@ export default function LighterPage() {
       const json = (await res.json()) as TapResponse;
 
       if (!res.ok || (json as any).ok !== true) {
-        setStatus(`Tap could not be recorded. Please try again.`);
+        setStatus("Tap could not be recorded. Please try again.");
         return;
       }
 
       setStatus("Tap logged successfully ✅");
       await refreshStats();
-    } catch (e: any) {
-      setStatus(
-        e?.message
-          ? `Location permission is required to log a sighting.`
-          : "Tap could not be recorded. Please try again."
-      );
+    } catch {
+      setStatus("Location permission is required to log a sighting.");
     } finally {
       setBusy(false);
     }
@@ -122,7 +118,6 @@ export default function LighterPage() {
       <div className="w-[420px] max-w-[92vw] rounded-3xl border border-white/10 bg-white/5 backdrop-blur-xl shadow-[0_0_40px_rgba(120,80,255,0.15)] p-6">
         {/* Header */}
         <div className="flex items-center gap-3">
-          {/* Put your logo here: /public/logo_app.png */}
           <Image src="/logo_app.png" alt="Where’s My Lighter" width={40} height={40} priority />
           <div>
             <div className="text-2xl font-semibold leading-tight">Where’s My Lighter</div>
@@ -130,24 +125,21 @@ export default function LighterPage() {
           </div>
         </div>
 
-        {/* Progress */}
+        {/* Hatching progress */}
         <div className="mt-6">
           <div className="flex items-center justify-between text-white/80">
             <div className="text-sm">Hatching progress</div>
             <div className="text-sm">{progress}/5 taps</div>
           </div>
           <div className="mt-2 h-3 w-full rounded-full bg-white/10 overflow-hidden">
-            <div
-              className="h-full bg-violet-500/80"
-              style={{ width: `${(progress / 5) * 100}%` }}
-            />
+            <div className="h-full bg-violet-500/80" style={{ width: `${(progress / 5) * 100}%` }} />
           </div>
           <div className="mt-2 text-sm text-white/60">
             Avatar + archetype unlock after 5 unique taps.
           </div>
         </div>
 
-        {/* Cards */}
+        {/* Stats grid */}
         <div className="mt-5 grid grid-cols-2 gap-3">
           <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
             <div className="text-xs tracking-[0.22em] text-white/60">BIRTH</div>
@@ -183,11 +175,9 @@ export default function LighterPage() {
           </div>
         </div>
 
-        {/* Hatchling */}
+        {/* Hatchling panel */}
         <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-5 text-center">
-          <div className="text-lg font-semibold">
-            {tapCount >= 5 ? "8-bit Hatchling" : "Embryo"}
-          </div>
+          <div className="text-lg font-semibold">{tapCount >= 5 ? "8-bit Hatchling" : "Embryo"}</div>
           <div className="text-white/60">
             {tapCount >= 5 ? "Awakened" : `Needs ${remaining} taps to hatch`}
           </div>
@@ -221,11 +211,7 @@ export default function LighterPage() {
 
         {/* Status + debug */}
         <div className="mt-4 text-center">
-          {status ? (
-            <div className="text-sm text-white/80">{status}</div>
-          ) : (
-            <div className="text-sm text-white/40">—</div>
-          )}
+          {status ? <div className="text-sm text-white/80">{status}</div> : <div className="text-sm text-white/40">—</div>}
 
           <div className="mt-3 text-xs text-white/30">
             lighter: {lighterId}
