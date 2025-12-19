@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { getOrCreateVisitorId } from "@/lib/visitorId";
 import { avatarDataUrl } from "@/lib/avatar";
 
@@ -33,13 +33,51 @@ function fmtPlace(city?: string | null, country?: string | null) {
   return c || "Unknown";
 }
 
+function getAutoTapFlag() {
+  if (typeof window === "undefined") return false;
+  const u = new URL(window.location.href);
+  return u.searchParams.get("autotap") === "1";
+}
+
+async function getBestPositionOnce(): Promise<GeolocationPosition> {
+  // We try a couple of attempts to get a better GPS fix before giving up.
+  // Still: meter-level is not guaranteed.
+  const attempt = () =>
+    new Promise<GeolocationPosition>((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(resolve, reject, {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 0,
+      });
+    });
+
+  // 1st attempt
+  const p1 = await attempt();
+
+  // If accuracy is already good, stop.
+  if (typeof p1.coords.accuracy === "number" && p1.coords.accuracy <= 50) return p1;
+
+  // 2nd attempt (often improves once GPS warms up)
+  try {
+    const p2 = await attempt();
+    // choose better accuracy
+    if ((p2.coords.accuracy ?? 999999) <= (p1.coords.accuracy ?? 999999)) return p2;
+  } catch {
+    // ignore and fall back to p1
+  }
+
+  return p1;
+}
+
 export default function LighterClient({ lighterId }: { lighterId: string }) {
   const [data, setData] = useState<LighterPayload | null>(null);
   const [busy, setBusy] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [panel, setPanel] = useState<null | "birth" | "travel" | "owners">(null);
+  const [statusLine, setStatusLine] = useState<string | null>(null);
 
   const visitorId = useMemo(() => getOrCreateVisitorId(), []);
+  const didAutoTapRef = useRef(false);
 
   async function refresh() {
     const r = await fetch(`/api/lighter/${encodeURIComponent(lighterId)}`, { cache: "no-store" });
@@ -52,46 +90,77 @@ export default function LighterClient({ lighterId }: { lighterId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lighterId]);
 
+  async function postTap(pos: GeolocationPosition) {
+    const payload = {
+      visitor_id: visitorId,
+      lat: pos.coords.latitude,
+      lng: pos.coords.longitude,
+      accuracy_m: pos.coords.accuracy,
+    };
+
+    await fetch(`/api/lighter/${encodeURIComponent(lighterId)}/tap`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  }
+
   async function tapWithoutProfile() {
     setBusy(true);
+    setStatusLine("Getting your location…");
     try {
-      // Ask device location with high accuracy.
-      // Note: "to the meter" isn't guaranteed; this requests best available.
-      const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject, {
-          enableHighAccuracy: true,
-          timeout: 15000,
-          maximumAge: 0,
-        });
-      });
-
-      const payload = {
-        visitor_id: visitorId,
-        lat: pos.coords.latitude,
-        lng: pos.coords.longitude,
-        accuracy_m: pos.coords.accuracy,
-      };
-
-      await fetch(`/api/lighter/${encodeURIComponent(lighterId)}/tap`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      await refresh();
-    } catch (e) {
-      alert(
-        "Couldn’t record tap. Make sure location permission is allowed and try again."
+      const pos = await getBestPositionOnce();
+      setStatusLine(
+        `Logging tap (accuracy ~${Math.round(pos.coords.accuracy ?? 0)}m)…`
       );
+      await postTap(pos);
+      setStatusLine("Tap logged.");
+      await refresh();
+    } catch {
+      setStatusLine(null);
+      alert("Couldn’t record tap. Allow location permission and try again.");
     } finally {
       setBusy(false);
+      setTimeout(() => setStatusLine(null), 1800);
     }
   }
+
+  // AUTO TAP ON NFC OPEN (page load) if ?autotap=1 AND permission already granted
+  useEffect(() => {
+    if (didAutoTapRef.current) return;
+    if (!getAutoTapFlag()) return;
+
+    didAutoTapRef.current = true;
+
+    (async () => {
+      try {
+        // If Permissions API not available, we do NOT auto-tap (avoid surprise prompts),
+        // user can press the button.
+        if (!("permissions" in navigator)) return;
+
+        // @ts-ignore - some TS libs don't include "geolocation" name type correctly
+        const perm = await navigator.permissions.query({ name: "geolocation" });
+        if (perm.state !== "granted") return;
+
+        setBusy(true);
+        setStatusLine("Auto tap: location granted — logging…");
+        const pos = await getBestPositionOnce();
+        await postTap(pos);
+        setStatusLine("Auto tap logged.");
+        await refresh();
+      } catch {
+        // silent; user can manually tap
+      } finally {
+        setBusy(false);
+        setTimeout(() => setStatusLine(null), 1800);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lighterId]);
 
   const hatched = !!data?.hatch.hatched;
   const taps = data?.hatch.taps ?? 0;
   const req = data?.hatch.required ?? 5;
-
   const progress = Math.min(1, taps / req);
 
   const avatarSrc = avatarDataUrl(lighterId, hatched);
@@ -156,7 +225,6 @@ export default function LighterClient({ lighterId }: { lighterId: string }) {
 
           {/* 2x2 info blocks around avatar */}
           <div className="mt-4 grid grid-cols-3 gap-3">
-            {/* Left */}
             <button
               onClick={() => setPanel("birth")}
               className="col-span-1 rounded-2xl border border-white/10 bg-white/5 p-3 text-left hover:bg-white/10"
@@ -172,7 +240,6 @@ export default function LighterClient({ lighterId }: { lighterId: string }) {
               </div>
             </button>
 
-            {/* Avatar center */}
             <div className="col-span-1 flex flex-col items-center justify-center">
               <div className="rounded-2xl border border-white/10 bg-black/20 p-2">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -183,7 +250,6 @@ export default function LighterClient({ lighterId }: { lighterId: string }) {
               </div>
             </div>
 
-            {/* Right */}
             <button
               onClick={() => setPanel("owners")}
               className="col-span-1 rounded-2xl border border-white/10 bg-white/5 p-3 text-left hover:bg-white/10"
@@ -210,10 +276,8 @@ export default function LighterClient({ lighterId }: { lighterId: string }) {
               <div className="text-xs text-white/50">Total distance</div>
             </button>
 
-            {/* Spacer */}
             <div className="col-span-1" />
 
-            {/* Last seen (not a button for now) */}
             <div className="col-span-1 rounded-2xl border border-white/10 bg-white/5 p-3 text-left">
               <div className="text-xs uppercase tracking-widest text-white/60">
                 Last seen
@@ -273,6 +337,12 @@ export default function LighterClient({ lighterId }: { lighterId: string }) {
             Create a profile to appear in the Owners Log. No account required to tap —
             only to connect.
           </div>
+
+          {statusLine && (
+            <div className="mt-3 rounded-2xl border border-white/10 bg-black/20 p-3 text-sm text-white/75">
+              {statusLine}
+            </div>
+          )}
 
           {/* Actions */}
           <div className="mt-4 grid grid-cols-2 gap-3">
