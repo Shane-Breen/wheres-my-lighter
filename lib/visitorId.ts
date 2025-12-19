@@ -1,30 +1,21 @@
 // lib/visitorId.ts
-"use client";
-
-/**
- * Generates a stable anonymous visitor id stored in localStorage.
- * This is NOT a device id. It’s just a random UUID per browser.
- */
-export function getOrCreateVisitorId(): string {
+export function getOrCreateVisitorId(storageKey = "wml_visitor_id") {
   if (typeof window === "undefined") return "server";
 
-  const key = "wml_visitor_id";
-  const existing = window.localStorage.getItem(key);
+  const existing = window.localStorage.getItem(storageKey);
   if (existing) return existing;
 
-  // Prefer crypto.randomUUID if available
-  const uuid =
-    typeof window.crypto !== "undefined" &&
-    typeof window.crypto.randomUUID === "function"
+  const id =
+    typeof window.crypto !== "undefined" && "randomUUID" in window.crypto
       ? window.crypto.randomUUID()
-      : fallbackUuid();
+      : fallbackUUID();
 
-  window.localStorage.setItem(key, uuid);
-  return uuid;
+  window.localStorage.setItem(storageKey, id);
+  return id;
 }
 
-function fallbackUuid(): string {
-  // RFC4122-ish fallback (not cryptographically strong, but fine for anonymous visitor id)
+function fallbackUUID() {
+  // RFC4122-ish fallback (not crypto-strong, but fine for anonymous visitor ids)
   const s4 = () => Math.floor((1 + Math.random()) * 0x10000).toString(16).slice(1);
   return `${s4()}${s4()}-${s4()}-${s4()}-${s4()}-${s4()}${s4()}${s4()}`;
 }
