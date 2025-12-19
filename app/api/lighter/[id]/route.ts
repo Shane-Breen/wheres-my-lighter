@@ -1,72 +1,84 @@
+// app/api/lighter/[id]/route.ts
 import { NextResponse } from "next/server";
-import { supabaseServer } from "@/lib/supabaseServer";
+import { createSupabaseAdmin } from "@/lib/supabaseAdmin";
 
-function haversineKm(a: { lat: number; lon: number }, b: { lat: number; lon: number }) {
-  const R = 6371;
-  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
-  const dLon = ((b.lon - a.lon) * Math.PI) / 180;
-  const lat1 = (a.lat * Math.PI) / 180;
-  const lat2 = (b.lat * Math.PI) / 180;
+export const runtime = "nodejs"; // ensures this runs in Node (not Edge)
 
-  const x =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+// NOTE: In Next 15, the route handler context typing can be finicky.
+// Using `ctx: any` avoids the build-time type mismatch.
+export async function GET(_req: Request, ctx: any) {
+  const id = String(ctx?.params?.id || "").trim();
+  if (!id) {
+    return NextResponse.json({ error: "Missing lighter id" }, { status: 400 });
+  }
 
-  return 2 * R * Math.asin(Math.sqrt(x));
-}
+  const supabase = createSupabaseAdmin();
 
-export async function GET(_: Request, { params }: { params: { id: string } }) {
-  const supabase = supabaseServer();
-  const lighterId = params.id;
-
-  const { data: lighter } = await supabase
+  // 1) Load lighter row
+  const { data: lighter, error: lighterErr } = await supabase
     .from("lighters")
     .select("*")
-    .eq("id", lighterId)
+    .eq("id", id)
     .maybeSingle();
 
+  if (lighterErr) {
+    return NextResponse.json({ error: lighterErr.message }, { status: 500 });
+  }
+
+  if (!lighter) {
+    return NextResponse.json({ error: "Lighter not found" }, { status: 404 });
+  }
+
+  // 2) Load tap history (newest first)
   const { data: taps, error: tapsErr } = await supabase
     .from("taps")
-    .select("phone_id, lat, lon, accuracy_m, created_at")
-    .eq("lighter_id", lighterId)
-    .order("created_at", { ascending: true });
+    .select("*")
+    .eq("lighter_id", id)
+    .order("tapped_at", { ascending: false })
+    .limit(200);
 
   if (tapsErr) {
     return NextResponse.json({ error: tapsErr.message }, { status: 500 });
   }
 
-  const tapsSafe = (taps ?? []).map(t => ({
-    phone_id: t.phone_id,
-    lat: t.lat,
-    lon: t.lon,
-    accuracy_m: t.accuracy_m,
-    created_at: t.created_at
-  }));
+  // 3) Unique holders count (visitor_id = generated per-device id)
+  const uniqueHolders = new Set((taps || []).map((t) => t.visitor_id).filter(Boolean)).size;
 
-  const uniqueOwners = new Set(tapsSafe.map(t => t.phone_id)).size;
+  // 4) Birth + last seen from taps (or fallback to columns on lighters)
+  const lastTap = (taps && taps[0]) || null;
+  const firstTap = (taps && taps[taps.length - 1]) || null;
 
-  // compute travel distance from consecutive taps that have coords
-  let distanceKm = 0;
-  const withCoords = tapsSafe.filter(t => typeof t.lat === "number" && typeof t.lon === "number");
-  for (let i = 1; i < withCoords.length; i++) {
-    distanceKm += haversineKm(
-      { lat: withCoords[i - 1].lat as number, lon: withCoords[i - 1].lon as number },
-      { lat: withCoords[i].lat as number, lon: withCoords[i].lon as number }
-    );
-  }
+  const birth = {
+    city: lighter.first_city ?? firstTap?.city ?? null,
+    country: lighter.first_country ?? firstTap?.country ?? null,
+    tapped_at: lighter.first_tapped_at ?? firstTap?.tapped_at ?? null,
+  };
 
-  const firstTap = tapsSafe[0] ?? null;
-  const lastTap = tapsSafe[tapsSafe.length - 1] ?? null;
+  const lastSeen = {
+    city: lighter.last_city ?? lastTap?.city ?? null,
+    country: lighter.last_country ?? lastTap?.country ?? null,
+    tapped_at: lighter.last_tapped_at ?? lastTap?.tapped_at ?? null,
+  };
+
+  // 5) Total distance (stored as numeric km in lighters.total_distance_km)
+  const totalDistanceKm = Number(lighter.total_distance_km ?? 0);
 
   return NextResponse.json({
-    lighter: lighter ?? { id: lighterId, archetype: null, pattern: null, style: null },
-    stats: {
-      taps: tapsSafe.length,
-      uniqueOwners,
-      totalDistanceKm: Math.round(distanceKm * 10) / 10,
-      firstTappedAt: firstTap?.created_at ?? null,
-      lastTappedAt: lastTap?.created_at ?? null
+    lighter: {
+      id: lighter.id,
+      archetype: lighter.archetype,
+      pattern: lighter.pattern,
+      style: lighter.style,
+      longest_possession_days: lighter.longest_possession_days ?? 0,
+      total_owners: lighter.total_owners ?? uniqueHolders,
+      total_distance_km: totalDistanceKm,
+      birth,
+      lastSeen,
     },
-    taps: tapsSafe
+    taps: taps || [],
+    computed: {
+      unique_holders: uniqueHolders,
+      tap_count: (taps || []).length,
+    },
   });
 }
