@@ -10,40 +10,25 @@ export async function GET(
   const { id } = params;
 
   if (!id) {
-    return NextResponse.json(
-      { error: "Missing id" },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "Missing id" }, { status: 400 });
   }
 
   try {
-    // Fetch single lighter row
     const res = await supabaseRest({
       table: "lighters",
-      query: {
-        id,
-        select: "*",
-        limit: 1,
-      },
+      query: { id, select: "*", limit: 1 },
     });
 
     if (!res.ok) {
       const text = await res.text();
-      return NextResponse.json(
-        { error: text },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: text }, { status: 500 });
     }
 
     const data = await res.json();
-
-    return NextResponse.json(
-      { lighter: data[0] ?? null },
-      { status: 200 }
-    );
+    return NextResponse.json({ lighter: data[0] ?? null }, { status: 200 });
   } catch (err: any) {
     return NextResponse.json(
-      { error: err.message ?? "Server error" },
+      { error: err?.message ?? "Server error" },
       { status: 500 }
     );
   }
