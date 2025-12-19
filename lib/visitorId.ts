@@ -1,10 +1,29 @@
-const KEY = "wml_visitor_id";
+// lib/visitorId.ts
+export function getOrCreateVisitorId(): string {
+  if (typeof window === "undefined") return "server";
 
-function uuidFallback() {
-  // RFC4122 v4 using crypto.getRandomValues
+  const key = "wml_visitor_id";
+  const existing = window.localStorage.getItem(key);
+  if (existing) return existing;
+
+  const id = safeUUID();
+  window.localStorage.setItem(key, id);
+  return id;
+}
+
+function safeUUID(): string {
+  // Prefer randomUUID
+  // @ts-ignore
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    // @ts-ignore
+    return crypto.randomUUID();
+  }
+
+  // Fallback UUID v4-ish
   const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);
 
+  // RFC4122 version 4
   bytes[6] = (bytes[6] & 0x0f) | 0x40;
   bytes[8] = (bytes[8] & 0x3f) | 0x80;
 
@@ -13,19 +32,4 @@ function uuidFallback() {
     16,
     20
   )}-${hex.slice(20)}`;
-}
-
-export function getOrCreateVisitorId(): string {
-  if (typeof window === "undefined") return "server";
-
-  const existing = localStorage.getItem(KEY);
-  if (existing) return existing;
-
-  const id =
-    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-      ? crypto.randomUUID()
-      : uuidFallback();
-
-  localStorage.setItem(KEY, id);
-  return id;
 }
