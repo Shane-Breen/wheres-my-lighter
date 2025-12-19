@@ -18,14 +18,14 @@ export function getOrCreateVisitorId(): string {
 }
 
 function uuidv4(): string {
-  // Prefer Web Crypto UUID if available
   const c: Crypto | undefined = typeof crypto !== "undefined" ? crypto : undefined;
 
-  // @ts-expect-error randomUUID may not exist in some TS libs depending on config
-  if (c && typeof c.randomUUID === "function") return c.randomUUID();
+  // Prefer Web Crypto UUID when available (type-safe)
+  const maybe = c as (Crypto & { randomUUID?: () => string }) | undefined;
+  if (maybe?.randomUUID) return maybe.randomUUID();
 
   // Fallback to RFC4122 v4 using getRandomValues
-  if (c && typeof c.getRandomValues === "function") {
+  if (c?.getRandomValues) {
     const bytes = new Uint8Array(16);
     c.getRandomValues(bytes);
 
