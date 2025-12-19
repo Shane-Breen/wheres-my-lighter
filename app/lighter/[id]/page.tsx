@@ -1,109 +1,141 @@
 "use client";
 
-import { useParams } from "next/navigation";
-import { useState } from "react";
-import TapClient from "./TapClient";
+import { useEffect, useState } from "react";
 
-const avatar = (seed: string) =>
-  `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(seed)}`;
+type LighterData = {
+  birth_city: string | null;
+  birth_country: string | null;
+  birth_date: string | null;
+  total_distance_km: number;
+  total_owners: number;
+  hatch_count: number;
+  archetype: string | null;
+  pattern: string | null;
+  style: string | null;
+  current_owner_name: string | null;
+};
 
-export default function LighterPage() {
-  const { id } = useParams<{ id: string }>();
+export default function LighterPage({
+  params,
+}: {
+  params: { id: string };
+}) {
+  const [data, setData] = useState<LighterData | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const [data, setData] = useState({
-    archetype: "The Night Traveller",
-    pattern: "Nocturnal",
-    style: "Hidden Courier",
-    longestStreak: 7,
-    totalOwners: 3,
-    owner: "Hidden Courier",
-    firstCity: "Berlin, Germany",
-    lastCity: "Dublin, Ireland",
-    sightings: ["Dublin, Ireland", "Skibbereen, Ireland", "Cork City, Ireland"],
-    bottleMessage:
-      "If you’ve held this lighter, you’re part of the story. Leave a note in the bottle and connect with those who carried it before you."
-  });
+  useEffect(() => {
+    fetch(`/api/lighter/${params.id}`)
+      .then((r) => r.json())
+      .then(setData)
+      .finally(() => setLoading(false));
+  }, [params.id]);
+
+  if (loading || !data) {
+    return <div className="p-6 text-white">Loading…</div>;
+  }
+
+  const hatched = data.hatch_count >= 5;
 
   return (
-    <div className="min-h-screen bg-[#0b1020] text-white flex justify-center p-4">
-      <div className="w-full max-w-[420px] space-y-4">
+    <main className="min-h-screen bg-[#140c1f] text-white flex justify-center">
+      <div className="max-w-sm w-full p-4 space-y-4">
 
-        <div className="rounded-3xl bg-white/10 p-5">
-          <div className="flex gap-4">
-            <img
-              src={avatar(data.owner)}
-              className="h-16 w-16 rounded-2xl bg-black"
-            />
-            <div>
-              <div className="text-xs opacity-70">Current Owner Profile</div>
-              <div className="text-xl font-semibold">{data.owner}</div>
+        {/* LOGO */}
+        <div className="text-center text-xl font-semibold">
+          Where’s My Lighter
+        </div>
+
+        {/* OWNER */}
+        <div className="text-center text-sm opacity-80">
+          Currently with{" "}
+          {data.current_owner_name ?? "an anonymous traveller"}
+        </div>
+
+        {/* HATCHING */}
+        {!hatched && (
+          <div className="bg-purple-900/40 p-3 rounded">
+            <div className="text-sm mb-1">
+              Hatching progress {data.hatch_count}/5
+            </div>
+            <div className="w-full h-2 bg-purple-950 rounded">
+              <div
+                className="h-2 bg-purple-400 rounded"
+                style={{ width: `${(data.hatch_count / 5) * 100}%` }}
+              />
+            </div>
+            <div className="text-xs mt-2 opacity-70">
+              Avatar unlocks after 5 unique taps
             </div>
           </div>
+        )}
 
-          <div className="grid grid-cols-2 gap-3 mt-4">
-            <Stat label="Archetype" value={data.archetype} />
-            <Stat label="Pattern" value={data.pattern} />
-            <Stat label="Style" value={data.style} />
-            <Stat
-              label="Longest Possession"
-              value={`${data.longestStreak} Days`}
-            />
-            <Stat label="Total Owners" value={data.totalOwners} full />
+        {/* AVATAR */}
+        <div className="flex justify-center">
+          <div className="w-32 h-32 bg-purple-800 rounded flex items-center justify-center text-xs">
+            {hatched ? "8-bit Avatar" : "Embryo"}
           </div>
         </div>
 
-        <div className="rounded-3xl bg-white/10 p-5">
-          <div className="text-sm opacity-70">Journey (Factual)</div>
-          <div className="mt-2 font-semibold">
-            First carried in {data.firstCity}
-          </div>
-          <div className="mt-1 font-semibold">
-            Last seen in {data.lastCity}
-          </div>
+        {/* INFO GRID */}
+        <div className="grid grid-cols-2 gap-3 text-sm">
+          <Info title="Birth">
+            {data.birth_city
+              ? `${data.birth_city}, ${data.birth_country}`
+              : "Not yet recorded"}
+          </Info>
 
-          <TapClient
-            lighterId={String(id)}
-            onLogged={(city) =>
-              setData((d) => ({
-                ...d,
-                lastCity: city,
-                sightings: [city, ...d.sightings]
-              }))
-            }
-          />
+          <Info title="Owners Log">
+            {data.total_owners} unique holders
+          </Info>
+
+          <Info title="Travel Log">
+            {data.total_distance_km.toFixed(0)} km travelled
+          </Info>
+
+          <Info title="Create Profile">
+            Optional
+          </Info>
         </div>
 
-        <div className="rounded-3xl bg-white/10 p-5">
-          <div className="font-semibold">Message in a Gas Bottle</div>
-          <p className="text-sm opacity-80 mt-2">{data.bottleMessage}</p>
-        </div>
+        {/* ARCHETYPE */}
+        {hatched && (
+          <details className="bg-purple-900/30 p-3 rounded">
+            <summary className="cursor-pointer">
+              Archetype
+            </summary>
+            <ul className="text-sm mt-2 space-y-1">
+              <li>Archetype: {data.archetype}</li>
+              <li>Pattern: {data.pattern}</li>
+              <li>Style: {data.style}</li>
+            </ul>
+          </details>
+        )}
 
-        <div className="rounded-3xl bg-white/10 p-5">
-          <div className="font-semibold mb-2">Sightings</div>
-          {data.sightings.map((s, i) => (
-            <div key={i} className="rounded-xl bg-white/10 p-3 mb-2">
-              {s}
-            </div>
-          ))}
+        {/* ACTIONS */}
+        <div className="flex gap-2">
+          <button className="flex-1 bg-purple-600 py-2 rounded">
+            Create Profile
+          </button>
+          <button className="flex-1 bg-purple-800 py-2 rounded">
+            Tap Without Profile
+          </button>
         </div>
       </div>
-    </div>
+    </main>
   );
 }
 
-function Stat({
-  label,
-  value,
-  full
+function Info({
+  title,
+  children,
 }: {
-  label: string;
-  value: string | number;
-  full?: boolean;
+  title: string;
+  children: React.ReactNode;
 }) {
   return (
-    <div className={`rounded-2xl bg-white/10 p-3 ${full ? "col-span-2" : ""}`}>
-      <div className="text-xs opacity-70">{label}</div>
-      <div className="font-semibold">{value}</div>
+    <div className="bg-purple-900/40 p-3 rounded">
+      <div className="opacity-70 text-xs mb-1">{title}</div>
+      <div>{children}</div>
     </div>
   );
 }
