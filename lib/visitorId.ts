@@ -12,7 +12,7 @@ export function getOrCreateVisitorId(): string {
 }
 
 function safeUUID(): string {
-  // Prefer randomUUID
+  // Prefer randomUUID when available
   // @ts-ignore
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     // @ts-ignore
@@ -23,7 +23,7 @@ function safeUUID(): string {
   const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);
 
-  // RFC4122 version 4
+  // RFC4122 v4 bits
   bytes[6] = (bytes[6] & 0x0f) | 0x40;
   bytes[8] = (bytes[8] & 0x3f) | 0x80;
 
