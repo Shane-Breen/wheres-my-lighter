@@ -1,49 +1,85 @@
-import { NextResponse } from "next/server";
-import { supabaseServer } from "@/lib/supabaseServer";
+export const runtime = "nodejs";
 
-export async function GET(_req: Request, context: any) {
+function supabaseUrl() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (!url) throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL");
+  return url.replace(/\/$/, "");
+}
+function supabaseAnonKey() {
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!key) throw new Error("Missing NEXT_PUBLIC_SUPABASE_ANON_KEY");
+  return key;
+}
+
+async function supabaseRest(path: string, init?: RequestInit) {
+  return fetch(`${supabaseUrl()}/rest/v1/${path}`, {
+    ...init,
+    headers: {
+      apikey: supabaseAnonKey(),
+      Authorization: `Bearer ${supabaseAnonKey()}`,
+      "Content-Type": "application/json",
+      ...(init?.headers || {}),
+    },
+    cache: "no-store",
+  });
+}
+
+export async function GET(req: Request, context: any) {
+  const lighterId = context?.params?.id as string;
+
   try {
-    const lighterId = String(context?.params?.id ?? "");
-    if (!lighterId) {
-      return NextResponse.json({ ok: false, error: "Missing lighter id" }, { status: 400 });
+    // total taps
+    const countRes = await supabaseRest(
+      `taps?select=id&lighter_id=eq.${encodeURIComponent(lighterId)}`,
+      { method: "GET" }
+    );
+    const taps = await countRes.json();
+    const total_taps = Array.isArray(taps) ? taps.length : 0;
+
+    // unique holders
+    const uniqRes = await supabaseRest(
+      `taps?select=visitor_id&lighter_id=eq.${encodeURIComponent(lighterId)}`,
+      { method: "GET" }
+    );
+    const uniqRows = await uniqRes.json();
+    const set = new Set<string>();
+    if (Array.isArray(uniqRows)) {
+      for (const r of uniqRows) if (r?.visitor_id) set.add(String(r.visitor_id));
     }
+    const unique_holders = set.size;
 
-    // Get taps newest-first (limit keeps it fast; increase later)
-    const { data: taps, error } = await supabaseServer
-      .from("taps")
-      .select("visitor_id,lat,lng,accuracy_m,city,country,place_label,tapped_at")
-      .eq("lighter_id", lighterId)
-      .order("tapped_at", { ascending: false })
-      .limit(500);
+    // birth tap (first ever)
+    const birthRes = await supabaseRest(
+      `taps?select=id,lighter_id,visitor_id,lat,lng,accuracy_m,city,country,tapped_at&lighter_id=eq.${encodeURIComponent(
+        lighterId
+      )}&order=tapped_at.asc&limit=1`,
+      { method: "GET" }
+    );
+    const birthArr = await birthRes.json();
+    const birth_tap = Array.isArray(birthArr) && birthArr[0] ? birthArr[0] : null;
 
-    if (error) {
-      return NextResponse.json({ ok: false, error: "Fetch failed", details: error }, { status: 500 });
-    }
+    // latest tap
+    const latestRes = await supabaseRest(
+      `taps?select=id,lighter_id,visitor_id,lat,lng,accuracy_m,city,country,tapped_at&lighter_id=eq.${encodeURIComponent(
+        lighterId
+      )}&order=tapped_at.desc&limit=1`,
+      { method: "GET" }
+    );
+    const latestArr = await latestRes.json();
+    const latest_tap = Array.isArray(latestArr) && latestArr[0] ? latestArr[0] : null;
 
-    const list = taps ?? [];
-    const tapCount = list.length;
-
-    const last = list[0] ?? null;
-    const first = list[tapCount - 1] ?? null;
-
-    const visitorSet = new Set<string>();
-    for (const t of list) {
-      if (t?.visitor_id) visitorSet.add(String(t.visitor_id));
-    }
-
-    return NextResponse.json({
+    return Response.json({
       ok: true,
       lighter_id: lighterId,
-      tapCount,
-      uniqueOwners: visitorSet.size,
-      birth: first
-        ? { tapped_at: first.tapped_at, place_label: first.place_label ?? first.country ?? null }
-        : null,
-      current: last
-        ? { tapped_at: last.tapped_at, place_label: last.place_label ?? last.country ?? null }
-        : null,
+      total_taps,
+      unique_holders,
+      birth_tap,
+      latest_tap,
     });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message ?? "Unknown error" }, { status: 500 });
+    return Response.json(
+      { ok: false, error: e?.message ?? "Failed", details: String(e) },
+      { status: 500 }
+    );
   }
 }
