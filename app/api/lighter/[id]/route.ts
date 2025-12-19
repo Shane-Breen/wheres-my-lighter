@@ -1,84 +1,129 @@
-// app/api/lighter/[id]/route.ts
+// app/api/lighter/[id]/tap/route.ts
 import { NextResponse } from "next/server";
-import { createSupabaseAdmin } from "@/lib/supabaseAdmin";
+import { createClient } from "@supabase/supabase-js";
 
-export const runtime = "nodejs"; // ensures this runs in Node (not Edge)
+export const runtime = "nodejs";
 
-// NOTE: In Next 15, the route handler context typing can be finicky.
-// Using `ctx: any` avoids the build-time type mismatch.
-export async function GET(_req: Request, ctx: any) {
-  const id = String(ctx?.params?.id || "").trim();
-  if (!id) {
-    return NextResponse.json({ error: "Missing lighter id" }, { status: 400 });
-  }
+function supabaseAdmin() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) throw new Error("Missing Supabase env vars");
+  return createClient(url, key, { auth: { persistSession: false } });
+}
 
-  const supabase = createSupabaseAdmin();
+function haversineKm(aLat: number, aLng: number, bLat: number, bLng: number) {
+  const R = 6371;
+  const dLat = ((bLat - aLat) * Math.PI) / 180;
+  const dLng = ((bLng - aLng) * Math.PI) / 180;
+  const s1 = Math.sin(dLat / 2) ** 2;
+  const s2 = Math.cos((aLat * Math.PI) / 180) * Math.cos((bLat * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(s1 + s2));
+}
 
-  // 1) Load lighter row
+export async function POST(req: Request, ctx: any) {
+  const lighterId = String(ctx?.params?.id || "").trim();
+  if (!lighterId) return NextResponse.json({ error: "Missing lighter id" }, { status: 400 });
+
+  const body = await req.json().catch(() => ({}));
+
+  const visitor_id = String(body.visitor_id || "").trim();
+  const lat = typeof body.lat === "number" ? body.lat : null;
+  const lng = typeof body.lng === "number" ? body.lng : null;
+  const accuracy_m = typeof body.accuracy_m === "number" ? body.accuracy_m : null;
+  const city = body.city ? String(body.city) : null;
+  const country = body.country ? String(body.country) : null;
+
+  if (!visitor_id) return NextResponse.json({ error: "Missing visitor_id" }, { status: 400 });
+
+  const supabase = supabaseAdmin();
+
+  // Ensure lighter exists
   const { data: lighter, error: lighterErr } = await supabase
     .from("lighters")
     .select("*")
-    .eq("id", id)
+    .eq("id", lighterId)
     .maybeSingle();
 
-  if (lighterErr) {
-    return NextResponse.json({ error: lighterErr.message }, { status: 500 });
-  }
+  if (lighterErr) return NextResponse.json({ error: lighterErr.message }, { status: 500 });
 
   if (!lighter) {
-    return NextResponse.json({ error: "Lighter not found" }, { status: 404 });
+    const { error: insErr } = await supabase.from("lighters").insert({ id: lighterId });
+    if (insErr) return NextResponse.json({ error: insErr.message }, { status: 500 });
   }
 
-  // 2) Load tap history (newest first)
-  const { data: taps, error: tapsErr } = await supabase
+  // Previous last tap (for distance calc)
+  const { data: prevTap } = await supabase
     .from("taps")
-    .select("*")
-    .eq("lighter_id", id)
+    .select("lat,lng")
+    .eq("lighter_id", lighterId)
     .order("tapped_at", { ascending: false })
-    .limit(200);
+    .limit(1)
+    .maybeSingle();
 
-  if (tapsErr) {
-    return NextResponse.json({ error: tapsErr.message }, { status: 500 });
+  // Insert tap
+  const { error: tapErr } = await supabase.from("taps").insert({
+    lighter_id: lighterId,
+    visitor_id,
+    lat,
+    lng,
+    accuracy_m,
+    city,
+    country,
+    tapped_at: new Date().toISOString(),
+  });
+
+  if (tapErr) return NextResponse.json({ error: tapErr.message }, { status: 500 });
+
+  // Recompute unique holders + distance increment
+  const { data: allTaps, error: tapsErr } = await supabase
+    .from("taps")
+    .select("visitor_id, lat, lng, city, country, tapped_at")
+    .eq("lighter_id", lighterId)
+    .order("tapped_at", { ascending: true });
+
+  if (tapsErr) return NextResponse.json({ error: tapsErr.message }, { status: 500 });
+
+  const uniqueHolders = new Set((allTaps || []).map((t) => t.visitor_id).filter(Boolean)).size;
+
+  let distanceIncrement = 0;
+  if (
+    prevTap &&
+    typeof prevTap.lat === "number" &&
+    typeof prevTap.lng === "number" &&
+    typeof lat === "number" &&
+    typeof lng === "number"
+  ) {
+    distanceIncrement = haversineKm(prevTap.lat, prevTap.lng, lat, lng);
   }
 
-  // 3) Unique holders count (visitor_id = generated per-device id)
-  const uniqueHolders = new Set((taps || []).map((t) => t.visitor_id).filter(Boolean)).size;
+  const first = allTaps?.[0] || null;
+  const last = allTaps?.[allTaps.length - 1] || null;
 
-  // 4) Birth + last seen from taps (or fallback to columns on lighters)
-  const lastTap = (taps && taps[0]) || null;
-  const firstTap = (taps && taps[taps.length - 1]) || null;
-
-  const birth = {
-    city: lighter.first_city ?? firstTap?.city ?? null,
-    country: lighter.first_country ?? firstTap?.country ?? null,
-    tapped_at: lighter.first_tapped_at ?? firstTap?.tapped_at ?? null,
+  // Update lighters: birth fields only if empty, last fields always
+  const patch: any = {
+    last_city: last?.city ?? lighter?.last_city ?? null,
+    last_country: last?.country ?? lighter?.last_country ?? null,
+    last_tapped_at: last?.tapped_at ?? new Date().toISOString(),
+    total_owners: uniqueHolders,
   };
 
-  const lastSeen = {
-    city: lighter.last_city ?? lastTap?.city ?? null,
-    country: lighter.last_country ?? lastTap?.country ?? null,
-    tapped_at: lighter.last_tapped_at ?? lastTap?.tapped_at ?? null,
-  };
+  if (!lighter?.first_tapped_at && first?.tapped_at) patch.first_tapped_at = first.tapped_at;
+  if (!lighter?.first_city && first?.city) patch.first_city = first.city;
+  if (!lighter?.first_country && first?.country) patch.first_country = first.country;
 
-  // 5) Total distance (stored as numeric km in lighters.total_distance_km)
-  const totalDistanceKm = Number(lighter.total_distance_km ?? 0);
+  // distance: add increment to stored total_distance_km (or recompute later)
+  const currentTotal = Number(lighter?.total_distance_km ?? 0);
+  patch.total_distance_km = Math.max(0, currentTotal + distanceIncrement);
+
+  const { error: upErr } = await supabase.from("lighters").update(patch).eq("id", lighterId);
+  if (upErr) return NextResponse.json({ error: upErr.message }, { status: 500 });
 
   return NextResponse.json({
-    lighter: {
-      id: lighter.id,
-      archetype: lighter.archetype,
-      pattern: lighter.pattern,
-      style: lighter.style,
-      longest_possession_days: lighter.longest_possession_days ?? 0,
-      total_owners: lighter.total_owners ?? uniqueHolders,
-      total_distance_km: totalDistanceKm,
-      birth,
-      lastSeen,
-    },
-    taps: taps || [],
+    ok: true,
     computed: {
       unique_holders: uniqueHolders,
-      tap_count: (taps || []).length,
+      tap_count: allTaps?.length ?? 0,
+      distance_increment_km: distanceIncrement,
     },
   });
 }
