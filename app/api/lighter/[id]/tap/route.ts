@@ -1,69 +1,100 @@
 // app/api/lighter/[id]/tap/route.ts
 import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 type TapBody = {
-  visitor_id?: string;
-  lat?: number;
-  lng?: number;
+  visitor_id: string;
+  lat: number;
+  lng: number;
   accuracy_m?: number | null;
-  city?: string | null;
-  country?: string | null;
 };
 
-function env(name: string) {
-  const v = process.env[name];
-  if (!v) throw new Error(`Missing env var: ${name}`);
-  return v;
+async function reverseGeocodeTown(lat: number, lng: number): Promise<{ city: string | null; country: string | null }> {
+  // Best-effort (no key). If it fails, we just store nulls.
+  try {
+    const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(
+      lat
+    )}&lon=${encodeURIComponent(lng)}&zoom=10&addressdetails=1`;
+
+    const res = await fetch(url, {
+      headers: {
+        // Nominatim requires a UA/contact
+        "User-Agent": "wheres-my-lighter/1.0 (contact: dev@wheres-my-lighter)",
+      },
+      // keep it fast
+      cache: "no-store",
+    });
+
+    if (!res.ok) return { city: null, country: null };
+
+    const data: any = await res.json();
+    const a = data?.address;
+
+    const city =
+      a?.town ||
+      a?.city ||
+      a?.village ||
+      a?.hamlet ||
+      a?.suburb ||
+      a?.municipality ||
+      null;
+
+    const country = a?.country || null;
+
+    return { city, country };
+  } catch {
+    return { city: null, country: null };
+  }
 }
 
-export async function POST(
-  req: Request,
-  { params }: { params: Promise<{ id: string }> } // ✅ REQUIRED for Next 15
-) {
+export async function POST(req: Request, { params }: any) {
   try {
-    const { id } = await params;
-    const body = (await req.json()) as TapBody;
-
-    if (!id) {
+    const lighterId = String(params?.id || "");
+    if (!lighterId) {
       return NextResponse.json({ ok: false, error: "Missing lighter id" }, { status: 400 });
     }
 
-    if (typeof body.lat !== "number" || typeof body.lng !== "number") {
-      return NextResponse.json({ ok: false, error: "Missing/invalid lat/lng" }, { status: 400 });
+    const body = (await req.json()) as TapBody;
+
+    if (!body?.visitor_id || typeof body.lat !== "number" || typeof body.lng !== "number") {
+      return NextResponse.json(
+        { ok: false, error: "Invalid payload. Need visitor_id, lat, lng." },
+        { status: 400 }
+      );
     }
 
-    const SUPABASE_URL = env("NEXT_PUBLIC_SUPABASE_URL");
-    const SUPABASE_ANON_KEY = env("NEXT_PUBLIC_SUPABASE_ANON_KEY");
+    // Store precise GPS, but only show town publicly
+    const { city, country } = await reverseGeocodeTown(body.lat, body.lng);
 
-    const insertPayload = {
-      lighter_id: id,
-      visitor_id: body.visitor_id ?? null,
+    const insertRow: any = {
+      lighter_id: lighterId,
+      visitor_id: body.visitor_id,
       lat: body.lat,
       lng: body.lng,
-      accuracy_m: typeof body.accuracy_m === "number" ? body.accuracy_m : null,
-      city: body.city ?? null,
-      country: body.country ?? null,
+      accuracy_m: body.accuracy_m ?? null,
+      city,
+      country,
     };
 
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/taps?select=*`, {
-      method: "POST",
-      headers: {
-        apikey: SUPABASE_ANON_KEY,
-        authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-        "content-type": "application/json",
-        prefer: "return=representation",
-      },
-      body: JSON.stringify(insertPayload),
-    });
+    const { data, error } = await supabase.from("taps").insert(insertRow).select("*").single();
 
-    const data = await res.json();
-
-    if (!res.ok) {
-      return NextResponse.json({ ok: false, error: "Insert failed", details: data }, { status: 400 });
+    if (error) {
+      return NextResponse.json(
+        { ok: false, error: "Insert failed", details: error },
+        { status: 500 }
+      );
     }
 
-    return NextResponse.json({ ok: true, tap: Array.isArray(data) ? data[0] : data });
+    return NextResponse.json({ ok: true, tap: data });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message ?? "Server error" }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: e?.message || "Unknown server error" },
+      { status: 500 }
+    );
   }
 }
