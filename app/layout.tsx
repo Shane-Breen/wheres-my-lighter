@@ -1,27 +1,31 @@
+// app/layout.tsx
 import "./globals.css";
-import { Press_Start_2P } from "next/font/google";
+import type { Metadata } from "next";
+import { Press_Start_2P, VT323 } from "next/font/google";
 
-const pixel = Press_Start_2P({
+const pressStart = Press_Start_2P({
   subsets: ["latin"],
   weight: "400",
-  variable: "--pixel-font",
+  variable: "--font-pressstart",
+  display: "swap",
 });
 
-export const metadata = {
+const vt323 = VT323({
+  subsets: ["latin"],
+  weight: "400",
+  variable: "--font-vt323",
+  display: "swap",
+});
+
+export const metadata: Metadata = {
   title: "Where’s My Lighter",
   description: "Tap to add a sighting",
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <body className={`${pixel.variable} crt`}>
-        {children}
-      </body>
+    <html lang="en" className={`${pressStart.variable} ${vt323.variable}`}>
+      <body>{children}</body>
     </html>
   );
 }
