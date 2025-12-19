@@ -14,8 +14,12 @@ type TapBody = {
   accuracy_m?: number | null;
 };
 
-async function reverseGeocodeTown(lat: number, lng: number): Promise<{ city: string | null; country: string | null }> {
-  // Best-effort (no key). If it fails, we just store nulls.
+async function reverseGeocodeTown(
+  lat: number,
+  lng: number
+): Promise<{ city: string | null; country: string | null }> {
+  // Best-effort reverse geocode without an API key.
+  // If it fails, we store nulls (still keeps precise GPS in DB).
   try {
     const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(
       lat
@@ -23,10 +27,9 @@ async function reverseGeocodeTown(lat: number, lng: number): Promise<{ city: str
 
     const res = await fetch(url, {
       headers: {
-        // Nominatim requires a UA/contact
+        // Nominatim requires a User-Agent
         "User-Agent": "wheres-my-lighter/1.0 (contact: dev@wheres-my-lighter)",
       },
-      // keep it fast
       cache: "no-store",
     });
 
@@ -56,19 +59,25 @@ export async function POST(req: Request, { params }: any) {
   try {
     const lighterId = String(params?.id || "");
     if (!lighterId) {
-      return NextResponse.json({ ok: false, error: "Missing lighter id" }, { status: 400 });
+      return NextResponse.json(
+        { ok: false, error: "Missing lighter id" },
+        { status: 400 }
+      );
     }
 
     const body = (await req.json()) as TapBody;
 
-    if (!body?.visitor_id || typeof body.lat !== "number" || typeof body.lng !== "number") {
+    if (
+      !body?.visitor_id ||
+      typeof body.lat !== "number" ||
+      typeof body.lng !== "number"
+    ) {
       return NextResponse.json(
         { ok: false, error: "Invalid payload. Need visitor_id, lat, lng." },
         { status: 400 }
       );
     }
 
-    // Store precise GPS, but only show town publicly
     const { city, country } = await reverseGeocodeTown(body.lat, body.lng);
 
     const insertRow: any = {
@@ -81,7 +90,11 @@ export async function POST(req: Request, { params }: any) {
       country,
     };
 
-    const { data, error } = await supabase.from("taps").insert(insertRow).select("*").single();
+    const { data, error } = await supabase
+      .from("taps")
+      .insert(insertRow)
+      .select("*")
+      .single();
 
     if (error) {
       return NextResponse.json(
