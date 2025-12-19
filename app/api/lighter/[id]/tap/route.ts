@@ -1,71 +1,79 @@
+// app/api/lighter/[id]/tap/route.ts
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 
 type TapBody = {
-  visitor_id: string;
-  lat: number;
-  lng: number;
+  visitor_id?: string | null;
+  lat?: number | null;
+  lng?: number | null;
   accuracy_m?: number | null;
+  city?: string | null;
+  country?: string | null;
+  place_label?: string | null;
 };
 
-function supabaseAdminLike() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-  return createClient(url, anon, {
-    auth: { persistSession: false },
-  });
-}
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
 export async function POST(
   req: Request,
-  { params }: { params: { id: string } }
+  ctx: { params: Promise<{ id: string }> }
 ) {
   try {
-    const lighter_id = params?.id;
+    const { id } = await ctx.params;
 
-    if (!lighter_id) {
+    if (!id) {
       return NextResponse.json({ error: "Missing lighter id" }, { status: 400 });
     }
 
-    const body = (await req.json()) as TapBody;
+    const body = (await req.json().catch(() => ({}))) as TapBody;
 
-    if (!body?.visitor_id) {
-      return NextResponse.json({ error: "Missing visitor_id" }, { status: 400 });
+    // IMPORTANT: for now we log GPS on first tap too (no privacy filtering yet)
+    const row = {
+      lighter_id: id,
+      visitor_id: body.visitor_id ?? null,
+      lat: typeof body.lat === "number" ? body.lat : null,
+      lng: typeof body.lng === "number" ? body.lng : null,
+      accuracy_m: typeof body.accuracy_m === "number" ? body.accuracy_m : null,
+      city: body.city ?? null,
+      country: body.country ?? null,
+      place_label: body.place_label ?? null,
+      tapped_at: new Date().toISOString(),
+    };
+
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/taps`, {
+      method: "POST",
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        "Content-Type": "application/json",
+        Prefer: "return=representation",
+      },
+      body: JSON.stringify(row),
+    });
+
+    const text = await res.text();
+    let json: any = null;
+    try {
+      json = text ? JSON.parse(text) : null;
+    } catch {
+      json = text;
     }
 
-    // You said: log GPS on first tap — so we REQUIRE lat/lng.
-    if (typeof body.lat !== "number" || typeof body.lng !== "number") {
+    if (!res.ok) {
       return NextResponse.json(
-        { error: "Missing GPS coordinates (lat/lng required)" },
-        { status: 400 }
-      );
-    }
-
-    const sb = supabaseAdminLike();
-
-    const { data, error } = await sb
-      .from("taps")
-      .insert({
-        lighter_id,
-        visitor_id: body.visitor_id,
-        lat: body.lat,
-        lng: body.lng,
-        accuracy_m: body.accuracy_m ?? null,
-      })
-      .select("id, lighter_id, visitor_id, lat, lng, accuracy_m, tapped_at")
-      .single();
-
-    if (error) {
-      return NextResponse.json(
-        { error: error.message, details: error },
+        {
+          error: "Insert failed",
+          status: res.status,
+          details: json,
+        },
         { status: 500 }
       );
     }
 
-    return NextResponse.json({ ok: true, tap: data }, { status: 200 });
+    return NextResponse.json({ ok: true, inserted: json }, { status: 200 });
   } catch (e: any) {
     return NextResponse.json(
-      { error: e?.message ?? "Unknown error" },
+      { error: "Server error", details: String(e?.message || e) },
       { status: 500 }
     );
   }
