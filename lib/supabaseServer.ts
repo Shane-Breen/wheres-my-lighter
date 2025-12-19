@@ -1,17 +1,15 @@
 // lib/supabaseServer.ts
-export function supabaseRest(path: string, init: RequestInit = {}) {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+import { createClient } from "@supabase/supabase-js";
 
-  if (!url || !key) {
-    throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY");
+export function supabaseRest() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!url || !anon) {
+    throw new Error("Missing Supabase env vars: NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY");
   }
 
-  const headers = new Headers(init.headers);
-  headers.set("apikey", key);
-  headers.set("Authorization", `Bearer ${key}`);
-  headers.set("Content-Type", headers.get("Content-Type") ?? "application/json");
-  if (!headers.get("Prefer")) headers.set("Prefer", "return=representation");
-
-  return fetch(`${url}/rest/v1/${path}`, { ...init, headers });
+  return createClient(url, anon, {
+    auth: { persistSession: false },
+  });
 }
