@@ -13,15 +13,12 @@ type TapBody = {
 
 export async function POST(
   req: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const id = params?.id;
+  const { id } = await params;
 
   if (!id) {
-    return NextResponse.json(
-      { error: "Missing lighter id" },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "Missing lighter id" }, { status: 400 });
   }
 
   let body: TapBody;
@@ -29,14 +26,10 @@ export async function POST(
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json(
-      { error: "Invalid JSON body" },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  // 🔒 TEMPORARY: no database write
-  // This endpoint only validates + echoes the tap
+  // 🔒 TEMPORARY: no database write (compile-proof)
   return NextResponse.json({
     ok: true,
     lighter_id: id,
