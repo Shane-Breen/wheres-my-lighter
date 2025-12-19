@@ -1,41 +1,48 @@
 // lib/supabaseServer.ts
-// Server-side helper that talks to Supabase REST safely (no client package needed)
+// Minimal Supabase REST helper (no @supabase/supabase-js dependency)
 
-type SupabaseRestArgs = {
-  table: string;
-  method?: "GET" | "POST" | "PATCH" | "DELETE";
-  body?: any;
-  query?: Record<string, string | number | boolean | null | undefined>;
+type RestQuery = {
+  select?: string;
+  limit?: number;
+  order?: string; // e.g. "created_at.desc"
+  [key: string]: any;
 };
 
-export function supabaseRest({ table, method = "GET", body, query }: SupabaseRestArgs) {
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
+export function supabaseRest(args: {
+  table: string;
+  query?: RestQuery;
+  method?: "GET" | "POST" | "PATCH" | "DELETE";
+  body?: any;
+}) {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const service =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_SERVICE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-  if (!url) throw new Error("Missing SUPABASE_URL env var");
-  if (!key) throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY (preferred) or SUPABASE_ANON_KEY");
+  if (!url) throw new Error("Missing env NEXT_PUBLIC_SUPABASE_URL");
+  if (!service) throw new Error("Missing env SUPABASE_SERVICE_ROLE_KEY (or anon key)");
 
-  const qs =
-    query && Object.keys(query).length
-      ? "?" +
-        Object.entries(query)
-          .filter(([, v]) => v !== undefined && v !== null)
-          .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
-          .join("&")
-      : "";
+  const { table, query = {}, method = "GET", body } = args;
 
-  const endpoint = `${url}/rest/v1/${table}${qs}`;
+  const endpoint = new URL(`${url}/rest/v1/${table}`);
+
+  // Build query string
+  for (const [k, v] of Object.entries(query)) {
+    if (v === undefined || v === null) continue;
+    endpoint.searchParams.set(k, String(v));
+  }
 
   const headers: Record<string, string> = {
-    apikey: key,
-    Authorization: `Bearer ${key}`,
+    apikey: service,
+    Authorization: `Bearer ${service}`,
     "Content-Type": "application/json",
   };
 
-  // Needed for returning inserted rows
-  if (method === "POST" || method === "PATCH") headers["Prefer"] = "return=representation";
+  // Prefer "return=representation" for writes so you get back row(s)
+  if (method !== "GET") headers["Prefer"] = "return=representation";
 
-  return fetch(endpoint, {
+  return fetch(endpoint.toString(), {
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,
