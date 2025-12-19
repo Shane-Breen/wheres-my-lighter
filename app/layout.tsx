@@ -1,12 +1,15 @@
 import "./globals.css";
+import { Press_Start_2P } from "next/font/google";
+
+const pixel = Press_Start_2P({
+  subsets: ["latin"],
+  weight: "400",
+  variable: "--pixel-font",
+});
 
 export const metadata = {
   title: "Where’s My Lighter",
   description: "Tap to add a sighting",
-  icons: {
-    icon: "/logo-app.png",
-    apple: "/logo-app.png",
-  },
 };
 
 export default function RootLayout({
@@ -16,7 +19,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body className={`${pixel.variable} crt`}>
+        {children}
+      </body>
     </html>
   );
 }
