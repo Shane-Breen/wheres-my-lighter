@@ -1,99 +1,113 @@
-import { NextResponse } from "next/server";
-import { supabaseServer } from "@/lib/supabaseServer";
+export const runtime = "nodejs";
 
-type TapBody = {
-  visitor_id?: string;
-  lat?: number;
-  lng?: number;
-  accuracy_m?: number;
-};
-
-function pickTownLabel(addr: any): { city: string | null; country: string | null; place_label: string | null } {
-  const city =
-    addr?.town ??
-    addr?.village ??
-    addr?.city ??
-    addr?.hamlet ??
-    addr?.locality ??
-    addr?.municipality ??
-    null;
-
-  const country = addr?.country ?? null;
-
-  const place_label = city && country ? `${city}, ${country}` : country ? country : null;
-
-  return { city, country, place_label };
+function supabaseUrl() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (!url) throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL");
+  return url.replace(/\/$/, "");
+}
+function supabaseAnonKey() {
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!key) throw new Error("Missing NEXT_PUBLIC_SUPABASE_ANON_KEY");
+  return key;
 }
 
-async function reverseGeocode(lat: number, lng: number) {
-  // OpenStreetMap Nominatim (free). Good for prototypes.
-  // IMPORTANT: add a User-Agent header per their usage policy.
-  const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(
-    lat
-  )}&lon=${encodeURIComponent(lng)}&zoom=12&addressdetails=1`;
-
-  const res = await fetch(url, {
+async function supabaseRest(path: string, init?: RequestInit) {
+  return fetch(`${supabaseUrl()}/rest/v1/${path}`, {
+    ...init,
     headers: {
-      "User-Agent": "wheres-my-lighter/1.0 (prototype)",
-      "Accept-Language": "en",
+      apikey: supabaseAnonKey(),
+      Authorization: `Bearer ${supabaseAnonKey()}`,
+      "Content-Type": "application/json",
+      Prefer: "return=representation",
+      ...(init?.headers || {}),
     },
-    // avoid caching stale places
     cache: "no-store",
   });
+}
 
-  if (!res.ok) return { city: null, country: null, place_label: null };
+// Best-effort reverse geocode to city/country using OpenStreetMap Nominatim
+async function reverseGeocode(lat: number, lng: number) {
+  try {
+    const url =
+      `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(
+        String(lat)
+      )}&lon=${encodeURIComponent(String(lng))}&zoom=12&addressdetails=1`;
 
-  const json: any = await res.json();
-  return pickTownLabel(json?.address);
+    const res = await fetch(url, {
+      headers: {
+        // Nominatim likes a UA; Vercel will pass this along
+        "User-Agent": "wheres-my-lighter/1.0 (reverse-geocode)",
+      },
+    });
+
+    const json: any = await res.json();
+    const a = json?.address || {};
+
+    const city =
+      a.city ||
+      a.town ||
+      a.village ||
+      a.hamlet ||
+      a.suburb ||
+      a.county ||
+      null;
+
+    const country = a.country || null;
+
+    return { city, country };
+  } catch {
+    return { city: null, country: null };
+  }
 }
 
 export async function POST(req: Request, context: any) {
+  const lighterId = context?.params?.id as string;
+
   try {
-    const lighterId = String(context?.params?.id ?? "");
-    if (!lighterId) {
-      return NextResponse.json({ ok: false, error: "Missing lighter id" }, { status: 400 });
+    const body = await req.json();
+    const visitor_id = body?.visitor_id ? String(body.visitor_id) : null;
+    const lat = Number(body?.lat);
+    const lng = Number(body?.lng);
+    const accuracy_m = body?.accuracy_m != null ? Number(body.accuracy_m) : null;
+
+    if (!visitor_id) {
+      return Response.json({ ok: false, error: "Missing visitor_id" }, { status: 400 });
+    }
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return Response.json({ ok: false, error: "Missing/invalid lat/lng" }, { status: 400 });
     }
 
-    const body = (await req.json()) as TapBody;
+    // reverse geocode (best effort)
+    const { city, country } = await reverseGeocode(lat, lng);
 
-    const visitor_id = body.visitor_id ?? null;
-    const lat = typeof body.lat === "number" ? body.lat : null;
-    const lng = typeof body.lng === "number" ? body.lng : null;
-    const accuracy_m = typeof body.accuracy_m === "number" ? Math.round(body.accuracy_m) : null;
+    const insertRes = await supabaseRest("taps", {
+      method: "POST",
+      body: JSON.stringify([
+        {
+          lighter_id: lighterId,
+          visitor_id,
+          lat,
+          lng,
+          accuracy_m,
+          city,
+          country,
+        },
+      ]),
+    });
 
-    if (!lat || !lng) {
-      return NextResponse.json({ ok: false, error: "Missing GPS lat/lng" }, { status: 400 });
-    }
+    const data = await insertRes.json();
 
-    // Reverse geocode to town/city label for display
-    const { city, country, place_label } = await reverseGeocode(lat, lng);
-
-    const { data, error } = await supabaseServer
-      .from("taps")
-      .insert({
-        lighter_id: lighterId,
-        visitor_id,
-        lat,
-        lng,
-        accuracy_m,
-        city,
-        country,
-        place_label,
-      })
-      .select("*")
-      .single();
-
-    if (error) {
-      return NextResponse.json(
-        { ok: false, error: "Insert failed", details: error },
+    if (!insertRes.ok) {
+      return Response.json(
+        { ok: false, error: "Insert failed", details: data },
         { status: 500 }
       );
     }
 
-    return NextResponse.json({ ok: true, tap: data });
+    return Response.json({ ok: true, tap: Array.isArray(data) ? data[0] : data });
   } catch (e: any) {
-    return NextResponse.json(
-      { ok: false, error: e?.message ?? "Unknown error" },
+    return Response.json(
+      { ok: false, error: e?.message ?? "Insert failed", details: String(e) },
       { status: 500 }
     );
   }
