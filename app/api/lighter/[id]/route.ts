@@ -7,8 +7,11 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
-  const R = 6371; // km
+function haversineKm(
+  a: { lat: number; lng: number },
+  b: { lat: number; lng: number }
+) {
+  const R = 6371;
   const toRad = (x: number) => (x * Math.PI) / 180;
 
   const dLat = toRad(b.lat - a.lat);
@@ -28,10 +31,12 @@ export async function GET(_: Request, { params }: any) {
   try {
     const lighterId = String(params?.id || "");
     if (!lighterId) {
-      return NextResponse.json({ ok: false, error: "Missing lighter id" }, { status: 400 });
+      return NextResponse.json(
+        { ok: false, error: "Missing lighter id" },
+        { status: 400 }
+      );
     }
 
-    // Pull taps ordered by time
     const { data: taps, error } = await supabase
       .from("taps")
       .select("id, visitor_id, lat, lng, accuracy_m, city, country, tapped_at")
@@ -39,27 +44,32 @@ export async function GET(_: Request, { params }: any) {
       .order("tapped_at", { ascending: true });
 
     if (error) {
-      return NextResponse.json({ ok: false, error: "Fetch failed", details: error }, { status: 500 });
+      return NextResponse.json(
+        { ok: false, error: "Fetch failed", details: error },
+        { status: 500 }
+      );
     }
 
-    const safeTaps = (taps || []).filter((t: any) => typeof t.lat === "number" && typeof t.lng === "number");
-
-    const tapCount = (taps || []).length;
+    const all = taps || [];
+    const tapCount = all.length;
 
     const uniqueVisitors = new Set<string>();
-    for (const t of taps || []) {
+    for (const t of all) {
       if (t?.visitor_id) uniqueVisitors.add(String(t.visitor_id));
     }
 
-    const birth = (taps || [])[0] || null;
-    const current = (taps || [])[tapCount - 1] || null;
+    const birth = all[0] || null;
+    const current = all[tapCount - 1] || null;
 
-    // Distance: sum consecutive segments
+    const safe = all.filter(
+      (t: any) => typeof t.lat === "number" && typeof t.lng === "number"
+    );
+
     let distanceKm = 0;
-    for (let i = 1; i < safeTaps.length; i++) {
+    for (let i = 1; i < safe.length; i++) {
       distanceKm += haversineKm(
-        { lat: safeTaps[i - 1].lat, lng: safeTaps[i - 1].lng },
-        { lat: safeTaps[i].lat, lng: safeTaps[i].lng }
+        { lat: safe[i - 1].lat, lng: safe[i - 1].lng },
+        { lat: safe[i].lat, lng: safe[i].lng }
       );
     }
 
@@ -71,14 +81,25 @@ export async function GET(_: Request, { params }: any) {
         unique_holders: uniqueVisitors.size,
         distance_km: Math.round(distanceKm),
         birth: birth
-          ? { tapped_at: birth.tapped_at, city: birth.city ?? null, country: birth.country ?? null }
+          ? {
+              tapped_at: birth.tapped_at,
+              city: birth.city ?? null,
+              country: birth.country ?? null,
+            }
           : null,
         current: current
-          ? { tapped_at: current.tapped_at, city: current.city ?? null, country: current.country ?? null }
+          ? {
+              tapped_at: current.tapped_at,
+              city: current.city ?? null,
+              country: current.country ?? null,
+            }
           : null,
       },
     });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || "Unknown server error" }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: e?.message || "Unknown server error" },
+      { status: 500 }
+    );
   }
 }
