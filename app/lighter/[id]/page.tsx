@@ -23,13 +23,19 @@ const AVATARS = {
   },
 };
 
-export default function LighterPage({ params }: { params: { id: string } }) {
+type PageProps = {
+  params: Promise<{ id: string }>;
+};
+
+export default async function LighterPage({ params }: PageProps) {
+  const { id } = await params;
+
+  // For now we hard-pick one avatar; later we’ll map this to taps/archetype logic.
   const avatar = AVATARS.caretaker;
 
   return (
     <main className="min-h-screen flex items-center justify-center bg-gradient-to-b from-[#120a2a] to-black text-white font-mono">
       <div className="w-[360px] rounded-2xl bg-[#1a1433]/80 backdrop-blur-md border border-white/10 p-4 shadow-2xl">
-
         {/* HEADER */}
         <div className="flex items-center gap-3 mb-4">
           <Image
@@ -41,6 +47,7 @@ export default function LighterPage({ params }: { params: { id: string } }) {
           <div>
             <h1 className="text-lg tracking-tight">Where’s My Lighter</h1>
             <p className="text-xs opacity-70">Tap to add a sighting</p>
+            <p className="text-[10px] opacity-40 mt-1">lighter: {id}</p>
           </div>
         </div>
 
@@ -99,7 +106,6 @@ export default function LighterPage({ params }: { params: { id: string } }) {
             Tap Without Profile
           </button>
         </div>
-
       </div>
     </main>
   );
