@@ -2,355 +2,177 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ---------------------------
-   Where’s My Lighter “Phone UI”
-   --------------------------- */
+:root{
+  --bg0:#070513;
+  --bg1:#140a2a;
+  --bg2:#220a3a;
+  --glass: rgba(255,255,255,0.06);
+  --glass2: rgba(255,255,255,0.09);
+  --stroke: rgba(255,255,255,0.10);
+  --stroke2: rgba(255,255,255,0.14);
+  --text: rgba(255,255,255,0.92);
+  --muted: rgba(255,255,255,0.70);
+  --muted2: rgba(255,255,255,0.55);
+  --accent: #b58bff;
+  --accent2: #7c3aed;
+  --shadow: 0 30px 120px rgba(0,0,0,0.65);
+}
 
-.wml-root {
+html, body{
+  height: 100%;
+}
+
+body{
+  margin:0;
+  color: var(--text);
+  background:
+    radial-gradient(900px 600px at 25% 20%, rgba(124,58,237,0.25), transparent 60%),
+    radial-gradient(700px 500px at 75% 30%, rgba(181,139,255,0.18), transparent 65%),
+    radial-gradient(900px 700px at 60% 80%, rgba(236,72,153,0.12), transparent 70%),
+    linear-gradient(135deg, var(--bg0), var(--bg1) 45%, var(--bg2));
+  overflow-x: hidden;
+  font-family: var(--font-ui), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+/* Centered “app phone” stage */
+.stage{
   min-height: 100vh;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding: 24px;
   position: relative;
-  overflow: hidden;
-  display: grid;
-  place-items: center;
-  padding: 28px 16px;
-  color: rgba(255, 255, 255, 0.92);
 }
 
-.wml-bg {
-  position: absolute;
-  inset: 0;
-  background:
-    radial-gradient(900px 700px at 50% 10%, rgba(184, 110, 255, 0.28), transparent 55%),
-    radial-gradient(800px 600px at 20% 30%, rgba(120, 90, 255, 0.20), transparent 60%),
-    radial-gradient(900px 700px at 80% 70%, rgba(120, 90, 255, 0.18), transparent 60%),
-    linear-gradient(180deg, #0b0615, #070510);
-  filter: saturate(1.05);
-}
-
-.wml-stars {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  opacity: 0.35;
-  background-image:
-    radial-gradient(2px 2px at 15% 20%, rgba(255,255,255,0.55), transparent 60%),
-    radial-gradient(2px 2px at 45% 35%, rgba(255,255,255,0.40), transparent 60%),
-    radial-gradient(1px 1px at 70% 25%, rgba(255,255,255,0.50), transparent 60%),
-    radial-gradient(2px 2px at 82% 55%, rgba(255,255,255,0.35), transparent 60%),
-    radial-gradient(1px 1px at 30% 70%, rgba(255,255,255,0.35), transparent 60%),
-    radial-gradient(2px 2px at 60% 78%, rgba(255,255,255,0.40), transparent 60%);
-}
-
-.wml-grain {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
+/* Grain + subtle CRT scanlines overlay */
+.stage::before{
+  content:"";
+  position:absolute;
+  inset:0;
+  pointer-events:none;
   opacity: 0.22;
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)' opacity='.35'/%3E%3C/svg%3E");
   mix-blend-mode: overlay;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='.35'/%3E%3C/svg%3E");
 }
 
-.wml-phone {
-  position: relative;
-  width: min(420px, 94vw);
-  border-radius: 26px;
-  padding: 22px 18px 18px;
-  background: rgba(24, 18, 40, 0.58);
-  border: 1px solid rgba(255, 255, 255, 0.10);
-  box-shadow:
-    0 18px 70px rgba(0, 0, 0, 0.55),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(18px);
-}
-
-.wml-logo {
-  position: absolute;
-  top: 14px;
-  left: 14px;
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
-  overflow: hidden;
-  border: 1px solid rgba(255,255,255,0.12);
-  background: rgba(0,0,0,0.25);
-  display: grid;
-  place-items: center;
-}
-
-.wml-top {
-  padding: 6px 4px 16px;
-  text-align: center;
-}
-
-.wml-pill {
-  width: fit-content;
-  margin: 2px auto 10px;
-  padding: 6px 12px;
-  border-radius: 999px;
-  font-size: 12px;
-  letter-spacing: 0.26em;
-  color: rgba(255,255,255,0.72);
-  border: 1px solid rgba(255,255,255,0.14);
-  background: rgba(0,0,0,0.22);
-}
-
-.wml-title {
-  margin: 0;
-  font-size: 34px;
-  line-height: 1.06;
-  letter-spacing: -0.02em;
-}
-
-.wml-sub {
-  margin: 10px 0 0;
-  color: rgba(255,255,255,0.72);
-  line-height: 1.4;
-}
-
-.wml-card {
-  margin-top: 14px;
-  border-radius: 22px;
-  padding: 14px;
-  border: 1px solid rgba(255,255,255,0.10);
-  background: rgba(12, 9, 22, 0.35);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
-}
-
-.wml-cardGlow {
+.stage::after{
+  content:"";
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  opacity: 0.12;
   background:
-    radial-gradient(120% 140% at 30% 10%, rgba(200, 120, 255, 0.18), transparent 60%),
-    rgba(12, 9, 22, 0.35);
+    repeating-linear-gradient(
+      to bottom,
+      rgba(255,255,255,0.10) 0px,
+      rgba(255,255,255,0.10) 1px,
+      rgba(0,0,0,0.00) 3px,
+      rgba(0,0,0,0.00) 6px
+    );
+  mix-blend-mode: soft-light;
 }
 
-.wml-cardHeader {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 10px;
-}
-
-.wml-idRow { display: flex; align-items: center; gap: 10px; }
-.wml-idIcon {
-  width: 18px; height: 18px;
-  border-radius: 6px;
-  background: linear-gradient(180deg, rgba(255,255,255,0.20), rgba(255,255,255,0.05));
-  border: 1px solid rgba(255,255,255,0.14);
-}
-.wml-idText { font-weight: 600; letter-spacing: 0.02em; }
-.wml-rightTag { font-size: 13px; color: rgba(255,255,255,0.72); }
-
-.wml-progressRow {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  margin-bottom: 10px;
-}
-.wml-progressLabel { color: rgba(255,255,255,0.88); }
-.wml-progressCount { color: rgba(255,255,255,0.72); }
-
-.wml-progressTrack {
-  height: 14px;
-  border-radius: 999px;
-  border: 1px solid rgba(255,255,255,0.12);
-  background: rgba(0,0,0,0.25);
+/* The “phone” shell */
+.phone{
+  width: min(420px, 100%);
+  border-radius: 28px;
+  background:
+    radial-gradient(110% 90% at 30% 10%, rgba(255,255,255,0.10), transparent 55%),
+    linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.04));
+  border: 1px solid var(--stroke);
+  box-shadow: var(--shadow);
+  position: relative;
   overflow: hidden;
 }
-.wml-progressFill {
+
+/* Inner sparkle layer */
+.phone::before{
+  content:"";
+  position:absolute;
+  inset:-40px;
+  pointer-events:none;
+  opacity: 0.55;
+  background:
+    radial-gradient(2px 2px at 10% 20%, rgba(255,255,255,0.8), transparent 60%),
+    radial-gradient(2px 2px at 35% 40%, rgba(255,255,255,0.7), transparent 60%),
+    radial-gradient(1.5px 1.5px at 70% 30%, rgba(255,255,255,0.7), transparent 60%),
+    radial-gradient(1.5px 1.5px at 85% 65%, rgba(255,255,255,0.6), transparent 60%),
+    radial-gradient(1px 1px at 20% 75%, rgba(255,255,255,0.55), transparent 60%);
+  filter: blur(0.2px);
+}
+
+.phoneContent{
+  position: relative;
+  padding: 22px 18px 18px;
+}
+
+/* Typography helpers */
+.hDisplay{
+  font-family: var(--font-display), ui-serif, Georgia, "Times New Roman", Times, serif;
+  letter-spacing: 0.02em;
+}
+
+.kicker{
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  font-size: 12px;
+  color: rgba(255,255,255,0.70);
+}
+
+/* Glass cards */
+.card{
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--stroke);
+  border-radius: 18px;
+}
+
+.card2{
+  background: rgba(255,255,255,0.07);
+  border: 1px solid var(--stroke2);
+  border-radius: 18px;
+}
+
+.pill{
+  border-radius: 999px;
+  border: 1px solid var(--stroke);
+  background: rgba(255,255,255,0.06);
+}
+
+/* Progress bar */
+.progressTrack{
+  height: 12px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.10);
+  overflow: hidden;
+}
+
+.progressFill{
   height: 100%;
   border-radius: 999px;
-  background: linear-gradient(90deg, rgba(255,255,255,0.55), rgba(180, 110, 255, 0.90));
+  background: linear-gradient(90deg, rgba(255,255,255,0.75), rgba(181,139,255,0.95));
+  box-shadow: 0 0 20px rgba(181,139,255,0.35);
 }
 
-.wml-muted {
-  margin-top: 10px;
-  color: rgba(255,255,255,0.66);
-  font-size: 14px;
-}
-
-.wml-mid {
-  margin-top: 14px;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  align-items: stretch;
-}
-
-.wml-statCard {
-  border-radius: 18px;
-  padding: 14px;
-  border: 1px solid rgba(255,255,255,0.10);
-  background: rgba(255,255,255,0.04);
-}
-
-.wml-statLabel {
-  font-size: 12px;
-  letter-spacing: 0.28em;
-  color: rgba(255,255,255,0.62);
-  margin-bottom: 10px;
-}
-
-.wml-statMain {
-  font-size: 18px;
-  font-weight: 650;
-  line-height: 1.1;
-}
-
-.wml-statBig {
-  font-size: 40px;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-  line-height: 1;
-  margin: 2px 0 6px;
-}
-
-.wml-statSub {
-  margin-top: 8px;
-  color: rgba(255,255,255,0.68);
-  font-size: 14px;
-}
-
-.wml-avatarCard {
-  grid-column: 1 / -1;
-  border-radius: 22px;
-  padding: 16px;
-  border: 1px solid rgba(255,255,255,0.10);
-  background: rgba(255,255,255,0.03);
-  display: grid;
-  justify-items: center;
-  gap: 10px;
-}
-
-.wml-avatarFrame {
-  width: 170px;
-  height: 170px;
-  border-radius: 20px;
-  border: 1px solid rgba(255,255,255,0.12);
-  background:
-    radial-gradient(120px 120px at 50% 40%, rgba(255,255,255,0.10), transparent 60%),
-    rgba(0,0,0,0.25);
-  display: grid;
-  place-items: center;
-  box-shadow:
-    0 14px 40px rgba(0,0,0,0.45),
-    inset 0 1px 0 rgba(255,255,255,0.06);
-}
-
-.wml-avatarName {
-  color: rgba(255,255,255,0.80);
-  font-weight: 650;
-}
-
-.wml-archetypeRow {
-  display: grid;
-  grid-template-columns: 86px 1fr;
-  gap: 12px;
-  align-items: center;
-}
-
-.wml-archetypeThumb {
-  width: 86px;
-  height: 86px;
-  border-radius: 18px;
-  border: 1px solid rgba(255,255,255,0.10);
-  background: rgba(0,0,0,0.22);
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-}
-
-.wml-archetypeName {
-  font-size: 26px;
-  font-weight: 800;
-  line-height: 1.05;
-}
-
-.wml-archetypeBlurb {
-  margin-top: 8px;
-  color: rgba(255,255,255,0.70);
-}
-
-.wml-divider {
-  height: 1px;
-  background: rgba(180, 110, 255, 0.25);
-  margin: 14px 0;
-}
-
-.wml-sectionTitle {
-  font-size: 12px;
-  letter-spacing: 0.28em;
-  color: rgba(255,255,255,0.66);
-  margin-bottom: 8px;
-}
-
-.wml-sectionLine {
-  color: rgba(255,255,255,0.78);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.wml-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-  background: rgba(255,255,255,0.40);
-  border: 1px solid rgba(255,255,255,0.25);
-}
-
-.wml-sep { color: rgba(255,255,255,0.35); }
-
-.wml-joinTitle {
-  text-align: center;
-  font-size: 22px;
-  font-weight: 800;
-}
-
-.wml-joinCopy {
-  text-align: center;
-  margin-top: 10px;
-  color: rgba(255,255,255,0.70);
-  line-height: 1.45;
-}
-
-.wml-btnRow {
-  margin-top: 14px;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-}
-
-.wml-btn {
-  border-radius: 999px;
+/* Buttons */
+.btn{
+  border-radius: 14px;
+  border: 1px solid var(--stroke2);
   padding: 12px 14px;
-  font-weight: 750;
-  border: 1px solid rgba(255,255,255,0.12);
-  background: rgba(255,255,255,0.05);
+  font-weight: 700;
+  background: rgba(255,255,255,0.06);
   color: rgba(255,255,255,0.92);
 }
 
-.wml-btnPrimary {
-  background: linear-gradient(180deg, rgba(180, 110, 255, 0.95), rgba(130, 80, 220, 0.95));
-  border-color: rgba(255,255,255,0.16);
+.btnPrimary{
+  background: linear-gradient(180deg, rgba(181,139,255,0.95), rgba(124,58,237,0.90));
+  border: 1px solid rgba(255,255,255,0.18);
+  box-shadow: 0 12px 30px rgba(124,58,237,0.25);
 }
 
-.wml-btnGhost {
-  background: rgba(255,255,255,0.04);
-}
-
-.wml-privacy {
-  margin-top: 12px;
-  text-align: center;
-  color: rgba(255,255,255,0.60);
-  font-size: 13px;
-  line-height: 1.4;
-}
-
-.wml-footNote {
-  margin-top: 10px;
-  text-align: center;
+.smallMuted{
+  font-size: 12px;
   color: rgba(255,255,255,0.62);
-  font-size: 13px;
+  line-height: 1.35;
 }
-
-.wml-err { color: rgba(255, 170, 170, 0.92); }
