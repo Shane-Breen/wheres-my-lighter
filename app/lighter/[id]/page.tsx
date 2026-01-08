@@ -10,6 +10,7 @@ type ApiResponse = {
   lighter_id: string;
   total_taps: number;
   unique_holders: number;
+  distance_km: number;
 
   latest_tap: {
     city: string | null;
@@ -49,6 +50,12 @@ function shortAnon(visitorId: string) {
   return `Anonymous #${tail}`;
 }
 
+function formatKm(km: number) {
+  if (!Number.isFinite(km) || km <= 0) return "0 km";
+  if (km < 10) return `${km.toFixed(1)} km`;
+  return `${Math.round(km)} km`;
+}
+
 export default function LighterPage(props: any) {
   const lighterId = String(props?.params?.id ?? "");
 
@@ -72,6 +79,7 @@ export default function LighterPage(props: any) {
             lighter_id: lighterId,
             total_taps: 0,
             unique_holders: 0,
+            distance_km: 0,
             latest_tap: null,
             journey_points: [],
             owners_log: [],
@@ -96,7 +104,6 @@ export default function LighterPage(props: any) {
   const lastSeen = useMemo(() => formatDateTime(data?.latest_tap?.tapped_at ?? null), [data]);
 
   const points = useMemo(() => {
-    // Ensure last point exists even if journey_points is empty
     const jp = data?.journey_points ?? [];
     if (jp.length > 0) return jp;
 
@@ -109,7 +116,6 @@ export default function LighterPage(props: any) {
 
   return (
     <div className="min-h-screen bg-[#070614] text-white">
-      {/* background glow */}
       <div className="pointer-events-none fixed inset-0">
         <div className="absolute -top-40 -left-40 h-[520px] w-[520px] rounded-full bg-purple-500/15 blur-3xl" />
         <div className="absolute -bottom-52 -right-40 h-[560px] w-[560px] rounded-full bg-indigo-500/15 blur-3xl" />
@@ -117,7 +123,6 @@ export default function LighterPage(props: any) {
       </div>
 
       <div className="relative mx-auto w-full max-w-[520px] px-5 py-10">
-        {/* Top card */}
         <div className="rounded-[28px] border border-white/10 bg-white/5 px-6 py-5 shadow-[0_0_0_1px_rgba(255,255,255,0.06),0_18px_60px_rgba(0,0,0,0.55)]">
           <div className="text-[12px] tracking-[0.22em] text-white/60">LIGHTER</div>
 
@@ -132,18 +137,22 @@ export default function LighterPage(props: any) {
             <div className="shrink-0 text-right">
               <div className="text-[32px] font-semibold leading-none">{data?.total_taps ?? 0}</div>
               <div className="mt-1 text-[11px] tracking-[0.22em] text-white/55">TAPS</div>
+
               <div className="mt-3 text-[22px] font-semibold leading-none">{data?.unique_holders ?? 0}</div>
               <div className="mt-1 text-[11px] tracking-[0.22em] text-white/55">OWNERS</div>
+
+              <div className="mt-3 text-[18px] font-semibold leading-none">
+                {formatKm(data?.distance_km ?? 0)}
+              </div>
+              <div className="mt-1 text-[11px] tracking-[0.22em] text-white/55">DISTANCE</div>
             </div>
           </div>
         </div>
 
-        {/* Map */}
         <div className="mt-5">
           <JourneyMap points={points} />
         </div>
 
-        {/* Owners log */}
         <div className="mt-5 rounded-[28px] border border-white/10 bg-white/5 px-6 py-5 shadow-[0_0_0_1px_rgba(255,255,255,0.06),0_18px_60px_rgba(0,0,0,0.55)]">
           <div className="text-[12px] tracking-[0.22em] text-white/60">OWNERS LOG</div>
 
@@ -161,12 +170,8 @@ export default function LighterPage(props: any) {
                   className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 flex items-center justify-between"
                 >
                   <div className="min-w-0">
-                    <div className="truncate text-[14px] font-medium">
-                      {shortAnon(o.visitor_id)}
-                    </div>
-                    <div className="mt-0.5 text-[12px] text-white/55">
-                      {formatPlace(o.city, o.country)}
-                    </div>
+                    <div className="truncate text-[14px] font-medium">{shortAnon(o.visitor_id)}</div>
+                    <div className="mt-0.5 text-[12px] text-white/55">{formatPlace(o.city, o.country)}</div>
                   </div>
                   <div className="ml-3 shrink-0 text-[12px] text-white/65">{o.taps} taps</div>
                 </div>
@@ -175,7 +180,6 @@ export default function LighterPage(props: any) {
           )}
         </div>
 
-        {/* Buttons */}
         <div className="mt-5 space-y-3">
           <a
             href="/profile"
@@ -183,6 +187,7 @@ export default function LighterPage(props: any) {
           >
             Create Profile
           </a>
+
           <button
             type="button"
             className="w-full rounded-2xl border border-purple-300/20 bg-purple-500/20 px-5 py-4 text-center font-medium text-white hover:bg-purple-500/25"
@@ -192,8 +197,8 @@ export default function LighterPage(props: any) {
           </button>
 
           <div className="pt-2 text-center text-[12px] leading-relaxed text-white/50">
-            We request location permission to log a sighting. Precise GPS is stored securely.
-            Only the nearest town is displayed publicly.
+            We request location permission to log a sighting. Precise GPS is stored securely. Only the nearest town
+            is displayed publicly.
           </div>
         </div>
       </div>
