@@ -1,11 +1,11 @@
 import Image from "next/image";
 
 type PageProps = {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 };
 
 export default async function Page({ params }: PageProps) {
-  const lighterId = params.id;
+  const { id: lighterId } = await params;
 
   // TEMP SAFE DATA (prevents runtime crash)
   const totalTaps = 73;
@@ -29,12 +29,9 @@ export default async function Page({ params }: PageProps) {
 
             {/* TITLE */}
             <div className="flex-1">
-              <h1 className="wmyl-title">
-                Where&apos;s My Lighter?
-              </h1>
-              <p className="wmyl-tagline">
-                Tracking this tiny flame across the globe
-              </p>
+              <h1 className="wmyl-title">Where&apos;s My Lighter?</h1>
+              <p className="wmyl-tagline">Tracking this tiny flame across the globe</p>
+              <p className="mt-2 text-xs text-white/30">ID: {lighterId}</p>
             </div>
 
             {/* STATS */}
@@ -59,15 +56,9 @@ export default async function Page({ params }: PageProps) {
               🌙
             </div>
             <div>
-              <div className="text-lg font-semibold">
-                County Cork, Ireland
-              </div>
-              <div className="text-sm text-white/50">
-                Last seen Jan 8, 2026
-              </div>
-              <div className="mt-1 text-xs text-white/40">
-                Distance travelled: 0.3 km
-              </div>
+              <div className="text-lg font-semibold">County Cork, Ireland</div>
+              <div className="text-sm text-white/50">Last seen Jan 8, 2026</div>
+              <div className="mt-1 text-xs text-white/40">Distance travelled: 0.3 km</div>
             </div>
           </div>
         </section>
