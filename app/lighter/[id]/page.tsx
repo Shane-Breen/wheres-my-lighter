@@ -43,29 +43,29 @@ export default async function Page(props: any) {
   return (
     <main className="min-h-screen bg-[#070716] text-white">
       <div className="mx-auto flex w-full max-w-md flex-col gap-4 px-4 py-10">
-        {/* Header Card */}
-        <div className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-[0_0_70px_rgba(140,90,255,0.16)]">
-          {/* Top strip: BRAND (bigger + dominant) */}
+        {/* HERO HEADER */}
+        <div className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-[0_0_80px_rgba(140,90,255,0.18)]">
+          {/* Brand row */}
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <span className="wmll-flicker inline-flex items-center justify-center">
+            <div className="flex items-center gap-4">
+              <span className="wmll-flicker">
                 <Image
                   src="/logoo.png"
                   alt="Where's My Lighter"
-                  width={44}
-                  height={44}
+                  width={56}
+                  height={56}
                   priority
-                  className="drop-shadow-[0_0_18px_rgba(168,139,250,0.95)]"
+                  className="drop-shadow-[0_0_24px_rgba(168,139,250,0.95)]"
                 />
               </span>
 
-              <div className="flex flex-col leading-none">
-                <span className="text-[14px] font-semibold tracking-[0.28em] text-white/90">
+              <div className="leading-tight">
+                <div className="text-2xl font-semibold tracking-[0.18em]">
                   WHERE’S MY LIGHTER?
-                </span>
-                <span className="mt-1 text-[11px] tracking-[0.18em] text-white/40">
+                </div>
+                <div className="mt-1 text-xs tracking-[0.28em] text-white/50">
                   TRACKING A TINY FLAME
-                </span>
+                </div>
               </div>
             </div>
 
@@ -77,25 +77,27 @@ export default async function Page(props: any) {
             </div>
           </div>
 
-          {/* Main content */}
-          <div className="mt-5 flex items-center gap-4">
-            <div className="grid h-12 w-12 place-items-center rounded-2xl bg-purple-500/20">
-              <span className="text-xl">🌙</span>
+          {/* Stats + location */}
+          <div className="mt-6 flex items-center gap-4">
+            <div className="grid h-10 w-10 place-items-center rounded-xl bg-purple-500/20">
+              <span className="text-lg">🌙</span>
             </div>
 
             <div className="flex-1">
-              <div className="text-xl font-semibold leading-tight">{label}</div>
+              <div className="text-sm font-medium text-white/85">
+                {label}
+              </div>
 
-              <div className="mt-1 text-xs text-white/50">
+              <div className="mt-1 text-[11px] text-white/45">
                 Last seen{" "}
                 {latest?.tapped_at
                   ? new Date(latest.tapped_at).toLocaleString()
                   : "—"}
               </div>
 
-              <div className="mt-2 text-xs text-white/40">
+              <div className="mt-2 text-[11px] text-white/40">
                 Distance travelled{" "}
-                <span className="text-white/85">{distanceKm} km</span>
+                <span className="text-white/75">{distanceKm} km</span>
               </div>
             </div>
 
@@ -105,7 +107,9 @@ export default async function Page(props: any) {
                 TOTAL TAPS
               </div>
 
-              <div className="mt-3 text-2xl font-semibold">{data?.unique_holders ?? 0}</div>
+              <div className="mt-3 text-2xl font-semibold">
+                {data?.unique_holders ?? 0}
+              </div>
               <div className="text-[10px] tracking-[0.25em] text-white/50">
                 OWNERS
               </div>
@@ -116,7 +120,7 @@ export default async function Page(props: any) {
         {/* Map */}
         <JourneyMap points={points} center={center} zoom={5} />
 
-        {/* Owners Log */}
+        {/* Owners log */}
         <OwnersLog lighterId={lighterId} />
 
         {/* Actions */}
@@ -125,19 +129,16 @@ export default async function Page(props: any) {
         {/* Flicker animation */}
         <style>{`
           @keyframes wmll-flicker {
-            0%   { transform: translateY(0) scale(1);   filter: drop-shadow(0 0 10px rgba(255,190,110,0.55)) drop-shadow(0 0 18px rgba(168,139,250,0.65)); opacity: 1; }
-            8%   { transform: translateY(-0.6px) scale(1.02); opacity: .96; }
-            16%  { transform: translateY(0.2px) scale(0.99);  filter: drop-shadow(0 0 12px rgba(255,170,90,0.65)) drop-shadow(0 0 22px rgba(168,139,250,0.75)); }
-            24%  { transform: translateY(-0.4px) scale(1.03); opacity: .98; }
-            32%  { transform: translateY(0.3px) scale(1.00);  filter: drop-shadow(0 0 9px rgba(255,210,140,0.55)) drop-shadow(0 0 16px rgba(168,139,250,0.60)); }
-            40%  { transform: translateY(-0.8px) scale(1.04); opacity: .95; }
-            55%  { transform: translateY(0.2px) scale(1.01);  filter: drop-shadow(0 0 14px rgba(255,170,90,0.70)) drop-shadow(0 0 26px rgba(168,139,250,0.80)); }
-            70%  { transform: translateY(-0.3px) scale(1.02); opacity: .98; }
-            86%  { transform: translateY(0.4px) scale(0.99);  filter: drop-shadow(0 0 10px rgba(255,210,140,0.60)) drop-shadow(0 0 18px rgba(168,139,250,0.65)); }
-            100% { transform: translateY(0) scale(1);   filter: drop-shadow(0 0 10px rgba(255,190,110,0.55)) drop-shadow(0 0 18px rgba(168,139,250,0.65)); opacity: 1; }
+            0% { transform: scale(1); filter: drop-shadow(0 0 14px rgba(255,180,100,.55)) drop-shadow(0 0 26px rgba(168,139,250,.8)); }
+            15% { transform: scale(1.04); opacity:.95; }
+            30% { transform: scale(.98); }
+            45% { transform: scale(1.06); filter: drop-shadow(0 0 18px rgba(255,160,90,.7)) drop-shadow(0 0 34px rgba(168,139,250,.9)); }
+            65% { transform: scale(1.01); }
+            85% { transform: scale(1.05); opacity:.97; }
+            100% { transform: scale(1); }
           }
           .wmll-flicker {
-            animation: wmll-flicker 1.75s infinite;
+            animation: wmll-flicker 1.9s infinite;
             transform-origin: center;
           }
           @media (prefers-reduced-motion: reduce) {
