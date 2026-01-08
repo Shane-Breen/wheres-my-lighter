@@ -2,10 +2,8 @@ import JourneyMap from "@/components/JourneyMap";
 import OwnersLog from "@/components/OwnersLog";
 import TapActions from "@/components/TapActions";
 
-type Point = { lat: number; lng: number };
-
 async function getLighterData(lighterId: string) {
-  // ✅ Use a relative URL on the server (fixes “Failed to parse URL …” + no headers() issues)
+  // Works on server + avoids headers() typing issues
   const res = await fetch(`/api/lighter/${encodeURIComponent(lighterId)}`, {
     cache: "no-store",
   });
@@ -14,8 +12,10 @@ async function getLighterData(lighterId: string) {
   return res.json();
 }
 
-export default async function Page({ params }: { params: { id: string } }) {
-  const lighterId = params.id;
+export default async function Page(props: any) {
+  // ✅ In your Next setup, params is treated like async
+  const params = await props?.params;
+  const lighterId = params?.id as string;
 
   const data = await getLighterData(lighterId);
 
@@ -25,7 +25,7 @@ export default async function Page({ params }: { params: { id: string } }) {
   const label = country ? `${city}, ${country}` : `${city}`;
 
   const journey = Array.isArray(data?.journey) ? data.journey : [];
-  const points: Point[] = journey
+  const points = journey
     .filter((p: any) => typeof p?.lat === "number" && typeof p?.lng === "number")
     .map((p: any) => ({ lat: p.lat as number, lng: p.lng as number }));
 
@@ -34,7 +34,7 @@ export default async function Page({ params }: { params: { id: string } }) {
 
   const distanceKm = typeof data?.distance_km === "number" ? data.distance_km : 0;
 
-  // 🔥 Sync logo pulse to taps (more taps = slightly faster, clamped)
+  // 🔥 Sync logo pulse to taps (more taps = slightly faster)
   const totalTaps = Number(data?.total_taps ?? 0);
   const pulseMs = Math.max(650, 1600 - totalTaps * 8);
 
@@ -46,10 +46,9 @@ export default async function Page({ params }: { params: { id: string } }) {
           className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-[0_0_50px_rgba(140,90,255,0.12)]"
           style={{ ["--pulse-ms" as any]: `${pulseMs}ms` }}
         >
-          {/* Top brand row */}
+          {/* Brand row */}
           <div className="flex items-center gap-4">
             <div className="logoWrap">
-              {/* You said you named it logoo.png */}
               <img
                 src="/logoo.png"
                 alt="Where's My Lighter logo"
@@ -59,7 +58,9 @@ export default async function Page({ params }: { params: { id: string } }) {
 
             <div className="min-w-0">
               <div className="brandTitle">Where&apos;s My Lighter?</div>
-              <div className="brandTagline">Tracking this tiny flame across the globe</div>
+              <div className="brandTagline">
+                Tracking this tiny flame across the globe
+              </div>
             </div>
           </div>
 
