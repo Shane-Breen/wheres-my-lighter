@@ -1,7 +1,8 @@
 "use client";
 
-import { MapContainer, TileLayer, Marker, Polyline } from "react-leaflet";
+import "leaflet/dist/leaflet.css";
 import L from "leaflet";
+import { MapContainer, TileLayer, Marker, Polyline } from "react-leaflet";
 
 type Point = { lat: number; lng: number };
 
@@ -14,7 +15,7 @@ const markerIcon = new L.DivIcon({
     border: 2px solid rgba(255,255,255,0.35);
   "></div>`,
   iconSize: [12, 12],
-  iconAnchor: [6, 6],
+  iconAnchor: [6, 6]
 });
 
 export default function JourneyMap({ points }: { points: Point[] }) {
@@ -42,10 +43,11 @@ export default function JourneyMap({ points }: { points: Point[] }) {
           {points.map((p, i) => (
             <Marker key={i} position={[p.lat, p.lng]} icon={markerIcon} />
           ))}
-          {line.length > 1 && <Polyline positions={line} pathOptions={{ weight: 3 }} />}
+          {line.length > 1 && (
+            <Polyline positions={line} pathOptions={{ weight: 3, opacity: 0.75 }} />
+          )}
         </MapContainer>
       </div>
     </div>
   );
 }
-
