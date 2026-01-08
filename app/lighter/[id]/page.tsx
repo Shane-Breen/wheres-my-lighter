@@ -31,26 +31,22 @@ type LighterApiResponse = {
   };
 };
 
-async function getBaseUrl() {
+async function absoluteUrl(path: string) {
   const h = await headers();
   const host = h.get("x-forwarded-host") ?? h.get("host");
   const proto = h.get("x-forwarded-proto") ?? "https";
-  return host ? `${proto}://${host}` : "";
+  if (!host) throw new Error("Missing host header");
+  return `${proto}://${host}${path}`;
 }
 
 async function getLighter(id: string): Promise<LighterApiResponse> {
-  const base = await getBaseUrl();
-  const url = `${base}/api/lighter/${id}`;
-
+  const url = await absoluteUrl(`/api/lighter/${encodeURIComponent(id)}`);
   const res = await fetch(url, { cache: "no-store" });
-  if (!res.ok) {
-    throw new Error(`Failed to load lighter (${res.status})`);
-  }
+  if (!res.ok) throw new Error(`Failed to load lighter (${res.status})`);
   return res.json();
 }
 
 export default async function Page(props: any) {
-  // Next 15 can pass params as a Promise-like value — normalize it safely
   const params = await Promise.resolve(props?.params);
   const id: string | undefined = params?.id;
 
@@ -77,9 +73,6 @@ export default async function Page(props: any) {
           <div className="text-lg font-semibold">Couldn’t load lighter</div>
           <div className="text-sm text-white/60 mt-2">
             {e?.message ?? "Unknown error"}
-          </div>
-          <div className="text-xs text-white/40 mt-3">
-            Tip: check Vercel → Logs for the exact server exception.
           </div>
         </div>
       </div>
@@ -124,7 +117,7 @@ export default async function Page(props: any) {
         {/* MAP */}
         <JourneyMap points={mapPoints} />
 
-        {/* OWNERS LOG (TEMP: shows latest holder only for now) */}
+        {/* OWNERS LOG (TEMP: latest holder only) */}
         <OwnersLog
           owners={[
             ...(data.latest_tap?.visitor_id
