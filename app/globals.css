@@ -1,70 +1,27 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-/* ---------- Logo animations ---------- */
-
-@keyframes flicker {
-  0%,
-  100% {
-    opacity: 1;
-    filter: drop-shadow(0 0 10px rgba(255, 190, 110, 0.35));
-  }
-  42% {
-    opacity: 0.86;
-    filter: drop-shadow(0 0 8px rgba(255, 190, 110, 0.25));
-  }
-  55% {
-    opacity: 0.96;
-    filter: drop-shadow(0 0 14px rgba(255, 190, 110, 0.45));
-  }
-  70% {
-    opacity: 0.9;
-    filter: drop-shadow(0 0 11px rgba(255, 190, 110, 0.35));
-  }
-}
-
-@keyframes pulseGlow {
-  0% {
+@keyframes flamePulse {
+  0%, 100% {
     transform: scale(1);
-    filter: drop-shadow(0 0 10px rgba(255, 190, 110, 0.28));
+    opacity: 0.9;
   }
   50% {
-    transform: scale(1.06);
-    filter: drop-shadow(0 0 18px rgba(255, 190, 110, 0.55));
-  }
-  100% {
-    transform: scale(1);
-    filter: drop-shadow(0 0 10px rgba(255, 190, 110, 0.28));
+    transform: scale(1.08);
+    opacity: 1;
   }
 }
 
-.logo-flicker {
-  animation: flicker 1.9s infinite ease-in-out;
+@keyframes flameGlow {
+  0%, 100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 0.6;
+  }
 }
 
-.logo-pulse {
-  animation-name: pulseGlow;
-  animation-timing-function: ease-in-out;
-  animation-iteration-count: infinite;
+.animate-flame-pulse {
+  animation: flamePulse 1.8s ease-in-out infinite;
 }
 
-/* ---------- Leaflet cosmetics ---------- */
-.leaflet-container {
-  background: transparent;
-}
-
-.leaflet-control-zoom a {
-  background: rgba(10, 10, 20, 0.55) !important;
-  color: rgba(255, 255, 255, 0.85) !important;
-  border: 1px solid rgba(255, 255, 255, 0.12) !important;
-  backdrop-filter: blur(10px);
-}
-
-.leaflet-control-zoom a:hover {
-  background: rgba(10, 10, 20, 0.7) !important;
-}
-
-.leaflet-control-attribution {
-  opacity: 0.6;
+.animate-flame-glow {
+  animation: flameGlow 1.8s ease-in-out infinite;
 }
