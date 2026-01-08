@@ -4,7 +4,7 @@ import TapActions from "@/components/TapActions";
 import { headers } from "next/headers";
 
 async function getLighterData(lighterId: string) {
-  const h = headers();
+  const h = await headers(); // ✅ IMPORTANT: headers() is async in your Next version
   const host = h.get("host");
   const proto = h.get("x-forwarded-proto") || "https";
   const base = host ? `${proto}://${host}` : "";
@@ -36,7 +36,7 @@ export default async function Page(props: any) {
   const center =
     points.length > 0
       ? points[points.length - 1]
-      : { lat: 51.7, lng: -8.5 }; // fallback near Ireland
+      : { lat: 51.7, lng: -8.5 };
 
   const distanceKm = typeof data?.distance_km === "number" ? data.distance_km : 0;
 
@@ -61,10 +61,9 @@ export default async function Page(props: any) {
               <div className="text-xl font-semibold leading-tight">{label}</div>
               <div className="mt-1 text-xs text-white/50">
                 Last seen{" "}
-                {latest?.tapped_at
-                  ? new Date(latest.tapped_at).toLocaleString()
-                  : "—"}
+                {latest?.tapped_at ? new Date(latest.tapped_at).toLocaleString() : "—"}
               </div>
+
               <div className="mt-2 text-xs text-white/40">
                 Distance travelled: <span className="text-white/80">{distanceKm} km</span>
               </div>
