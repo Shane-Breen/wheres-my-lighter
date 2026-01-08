@@ -1,207 +1,94 @@
-"use client";
+import JourneyMap from "@/components/JourneyMap";
+import OwnersLog from "@/components/OwnersLog";
+import TapActions from "@/components/TapActions";
+import { headers } from "next/headers";
 
-import { useEffect, useMemo, useState } from "react";
-import JourneyMap from "../../../components/JourneyMap";
+async function getLighterData(lighterId: string) {
+  const h = headers();
+  const host = h.get("host");
+  const proto = h.get("x-forwarded-proto") || "https";
+  const base = host ? `${proto}://${host}` : "";
 
-type ApiResponse = {
-  ok: boolean;
-  error?: string;
+  const res = await fetch(`${base}/api/lighter/${encodeURIComponent(lighterId)}`, {
+    cache: "no-store",
+  });
 
-  lighter_id: string;
-  total_taps: number;
-  unique_holders: number;
-  distance_km: number;
-
-  latest_tap: {
-    city: string | null;
-    country: string | null;
-    tapped_at: string | null;
-    lat: number | null;
-    lng: number | null;
-  } | null;
-
-  journey_points: { lat: number; lng: number }[];
-
-  owners_log: {
-    visitor_id: string;
-    taps: number;
-    last_seen: string | null;
-    city: string | null;
-    country: string | null;
-  }[];
-};
-
-function formatPlace(city?: string | null, country?: string | null) {
-  const a = (city ?? "").trim();
-  const b = (country ?? "").trim();
-  if (a && b) return `${a}, ${b}`;
-  return a || b || "Unknown location";
+  if (!res.ok) throw new Error("Failed to load lighter");
+  return res.json();
 }
 
-function formatDateTime(iso?: string | null) {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString();
-}
+export default async function Page(props: any) {
+  const params = await props?.params;
+  const lighterId = params?.id as string;
 
-function shortAnon(visitorId: string) {
-  const tail = visitorId.slice(-4).toUpperCase();
-  return `Anonymous #${tail}`;
-}
+  const data = await getLighterData(lighterId);
 
-function formatKm(km: number) {
-  if (!Number.isFinite(km) || km <= 0) return "0 km";
-  if (km < 10) return `${km.toFixed(1)} km`;
-  return `${Math.round(km)} km`;
-}
+  const latest = data?.latest_tap;
+  const city = latest?.city || "Unknown";
+  const country = latest?.country || "";
+  const label = country ? `${city}, ${country}` : `${city}`;
 
-export default function LighterPage(props: any) {
-  const lighterId = String(props?.params?.id ?? "");
+  const journey = Array.isArray(data?.journey) ? data.journey : [];
+  const points = journey
+    .filter((p: any) => typeof p?.lat === "number" && typeof p?.lng === "number")
+    .map((p: any) => ({ lat: p.lat as number, lng: p.lng as number }));
 
-  const [data, setData] = useState<ApiResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+  const center =
+    points.length > 0
+      ? points[points.length - 1]
+      : { lat: 51.7, lng: -8.5 }; // fallback near Ireland
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function run() {
-      try {
-        setLoading(true);
-        const res = await fetch(`/api/lighter/${encodeURIComponent(lighterId)}`, { cache: "no-store" });
-        const json = (await res.json()) as ApiResponse;
-        if (!cancelled) setData(json);
-      } catch (e: any) {
-        if (!cancelled) {
-          setData({
-            ok: false,
-            error: e?.message ?? "Failed",
-            lighter_id: lighterId,
-            total_taps: 0,
-            unique_holders: 0,
-            distance_km: 0,
-            latest_tap: null,
-            journey_points: [],
-            owners_log: [],
-          });
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-
-    run();
-    return () => {
-      cancelled = true;
-    };
-  }, [lighterId]);
-
-  const place = useMemo(() => {
-    const lt = data?.latest_tap;
-    return formatPlace(lt?.city, lt?.country);
-  }, [data]);
-
-  const lastSeen = useMemo(() => formatDateTime(data?.latest_tap?.tapped_at ?? null), [data]);
-
-  const points = useMemo(() => {
-    const jp = data?.journey_points ?? [];
-    if (jp.length > 0) return jp;
-
-    const lt = data?.latest_tap;
-    if (lt && typeof lt.lat === "number" && typeof lt.lng === "number") {
-      return [{ lat: lt.lat, lng: lt.lng }];
-    }
-    return [];
-  }, [data]);
+  const distanceKm = typeof data?.distance_km === "number" ? data.distance_km : 0;
 
   return (
-    <div className="min-h-screen bg-[#070614] text-white">
-      <div className="pointer-events-none fixed inset-0">
-        <div className="absolute -top-40 -left-40 h-[520px] w-[520px] rounded-full bg-purple-500/15 blur-3xl" />
-        <div className="absolute -bottom-52 -right-40 h-[560px] w-[560px] rounded-full bg-indigo-500/15 blur-3xl" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(0,0,0,0)_0%,rgba(0,0,0,0.45)_60%,rgba(0,0,0,0.75)_100%)]" />
-      </div>
+    <main className="min-h-screen bg-[#070716] text-white">
+      <div className="mx-auto flex w-full max-w-md flex-col gap-4 px-4 py-10">
+        {/* Top card */}
+        <div className="rounded-3xl border border-white/10 bg-white/5 p-5 shadow-[0_0_50px_rgba(140,90,255,0.12)]">
+          <div className="flex items-center justify-between">
+            <div className="text-xs tracking-[0.25em] text-white/50">LIGHTER</div>
+            <div className="text-xs text-white/40">
+              {new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+            </div>
+          </div>
 
-      <div className="relative mx-auto w-full max-w-[520px] px-5 py-10">
-        <div className="rounded-[28px] border border-white/10 bg-white/5 px-6 py-5 shadow-[0_0_0_1px_rgba(255,255,255,0.06),0_18px_60px_rgba(0,0,0,0.55)]">
-          <div className="text-[12px] tracking-[0.22em] text-white/60">LIGHTER</div>
+          <div className="mt-3 flex items-center gap-4">
+            <div className="grid h-12 w-12 place-items-center rounded-2xl bg-purple-500/20">
+              <span className="text-xl">🌙</span>
+            </div>
 
-          <div className="mt-3 flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <div className="text-[22px] font-semibold leading-tight">{place}</div>
-              <div className="mt-1 text-[12px] text-white/55">
-                {loading ? "Loading…" : `Last seen ${lastSeen}`}
+            <div className="flex-1">
+              <div className="text-xl font-semibold leading-tight">{label}</div>
+              <div className="mt-1 text-xs text-white/50">
+                Last seen{" "}
+                {latest?.tapped_at
+                  ? new Date(latest.tapped_at).toLocaleString()
+                  : "—"}
+              </div>
+              <div className="mt-2 text-xs text-white/40">
+                Distance travelled: <span className="text-white/80">{distanceKm} km</span>
               </div>
             </div>
 
-            <div className="shrink-0 text-right">
-              <div className="text-[32px] font-semibold leading-none">{data?.total_taps ?? 0}</div>
-              <div className="mt-1 text-[11px] tracking-[0.22em] text-white/55">TAPS</div>
+            <div className="text-right">
+              <div className="text-3xl font-semibold">{data?.total_taps ?? 0}</div>
+              <div className="text-[10px] tracking-[0.25em] text-white/50">TOTAL TAPS</div>
 
-              <div className="mt-3 text-[22px] font-semibold leading-none">{data?.unique_holders ?? 0}</div>
-              <div className="mt-1 text-[11px] tracking-[0.22em] text-white/55">OWNERS</div>
-
-              <div className="mt-3 text-[18px] font-semibold leading-none">
-                {formatKm(data?.distance_km ?? 0)}
-              </div>
-              <div className="mt-1 text-[11px] tracking-[0.22em] text-white/55">DISTANCE</div>
+              <div className="mt-3 text-2xl font-semibold">{data?.unique_holders ?? 0}</div>
+              <div className="text-[10px] tracking-[0.25em] text-white/50">OWNERS</div>
             </div>
           </div>
         </div>
 
-        <div className="mt-5">
-          <JourneyMap points={points} />
-        </div>
+        {/* Map */}
+        <JourneyMap points={points} center={center} zoom={5} />
 
-        <div className="mt-5 rounded-[28px] border border-white/10 bg-white/5 px-6 py-5 shadow-[0_0_0_1px_rgba(255,255,255,0.06),0_18px_60px_rgba(0,0,0,0.55)]">
-          <div className="text-[12px] tracking-[0.22em] text-white/60">OWNERS LOG</div>
+        {/* Owners log */}
+        <OwnersLog lighterId={lighterId} />
 
-          {loading ? (
-            <div className="mt-4 text-sm text-white/45">Loading…</div>
-          ) : data?.ok === false ? (
-            <div className="mt-4 text-sm text-red-300">API error: {data?.error ?? "Unknown"}</div>
-          ) : (data?.owners_log?.length ?? 0) === 0 ? (
-            <div className="mt-4 text-sm text-white/45">No owners yet.</div>
-          ) : (
-            <div className="mt-4 space-y-3">
-              {(data?.owners_log ?? []).slice(0, 6).map((o) => (
-                <div
-                  key={o.visitor_id}
-                  className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 flex items-center justify-between"
-                >
-                  <div className="min-w-0">
-                    <div className="truncate text-[14px] font-medium">{shortAnon(o.visitor_id)}</div>
-                    <div className="mt-0.5 text-[12px] text-white/55">{formatPlace(o.city, o.country)}</div>
-                  </div>
-                  <div className="ml-3 shrink-0 text-[12px] text-white/65">{o.taps} taps</div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="mt-5 space-y-3">
-          <a
-            href="/profile"
-            className="block w-full rounded-2xl border border-white/10 bg-white/10 px-5 py-4 text-center font-medium text-white/90 hover:bg-white/15"
-          >
-            Create Profile
-          </a>
-
-          <button
-            type="button"
-            className="w-full rounded-2xl border border-purple-300/20 bg-purple-500/20 px-5 py-4 text-center font-medium text-white hover:bg-purple-500/25"
-            onClick={() => alert("Tap Without Profile: wire this to /api/lighter/[id]/tap next.")}
-          >
-            Tap Without Profile
-          </button>
-
-          <div className="pt-2 text-center text-[12px] leading-relaxed text-white/50">
-            We request location permission to log a sighting. Precise GPS is stored securely. Only the nearest town
-            is displayed publicly.
-          </div>
-        </div>
+        {/* Actions */}
+        <TapActions lighterId={lighterId} />
       </div>
-    </div>
+    </main>
   );
 }
