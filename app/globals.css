@@ -1,56 +1,36 @@
-/* ===== Where's My Lighter Header ===== */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ===== BRAND ===== */
 
 .wmyl-title {
-  font-size: clamp(1.9rem, 6vw, 2.8rem);
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  line-height: 1.05;
+  font-size: clamp(1.8rem, 6vw, 3rem);
+  font-weight: 800;
+  letter-spacing: 0.05em;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: #ffffff;
 }
 
 .wmyl-tagline {
-  margin-top: 0.35rem;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-    "Liberation Mono", "Courier New", monospace;
+  margin-top: 0.3rem;
   font-size: 0.7rem;
-  letter-spacing: 0.18em;
-  text-transform: none;
-  color: rgba(255, 255, 255, 0.45);
+  opacity: 0.55;
+  font-family: "Courier New", Courier, monospace;
+  letter-spacing: 0.12em;
   white-space: nowrap;
 }
 
-/* ===== Logo glow + flicker ===== */
-
-.logoWrap {
-  position: relative;
-  display: grid;
-  place-items: center;
-}
+/* ===== LOGO FLICKER ===== */
 
 .logoFlicker {
-  filter:
-    drop-shadow(0 0 12px rgba(255, 170, 70, 0.6))
-    drop-shadow(0 0 28px rgba(140, 90, 255, 0.35));
-  animation: flamePulse var(--pulseDur, 1.2s) infinite ease-in-out;
+  animation: flicker 3.2s infinite;
+  filter: drop-shadow(0 0 14px rgba(255, 170, 90, 0.8));
 }
 
-@keyframes flamePulse {
-  0% {
-    transform: scale(1);
-    filter:
-      drop-shadow(0 0 10px rgba(255, 170, 70, 0.45))
-      drop-shadow(0 0 22px rgba(140, 90, 255, 0.25));
-  }
-  45% {
-    transform: scale(1.06);
-    filter:
-      drop-shadow(0 0 18px rgba(255, 180, 90, 0.8))
-      drop-shadow(0 0 36px rgba(160, 110, 255, 0.45));
-  }
-  100% {
-    transform: scale(1);
-  }
+@keyframes flicker {
+  0% { opacity: 1 }
+  45% { opacity: 0.85 }
+  50% { opacity: 0.6 }
+  55% { opacity: 0.95 }
+  100% { opacity: 1 }
 }
