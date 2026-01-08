@@ -2,177 +2,69 @@
 @tailwind components;
 @tailwind utilities;
 
-:root{
-  --bg0:#070513;
-  --bg1:#140a2a;
-  --bg2:#220a3a;
-  --glass: rgba(255,255,255,0.06);
-  --glass2: rgba(255,255,255,0.09);
-  --stroke: rgba(255,255,255,0.10);
-  --stroke2: rgba(255,255,255,0.14);
-  --text: rgba(255,255,255,0.92);
-  --muted: rgba(255,255,255,0.70);
-  --muted2: rgba(255,255,255,0.55);
-  --accent: #b58bff;
-  --accent2: #7c3aed;
-  --shadow: 0 30px 120px rgba(0,0,0,0.65);
+/* ---------- Logo animations ---------- */
+
+@keyframes flicker {
+  0%,
+  100% {
+    opacity: 1;
+    filter: drop-shadow(0 0 10px rgba(255, 190, 110, 0.35));
+  }
+  42% {
+    opacity: 0.86;
+    filter: drop-shadow(0 0 8px rgba(255, 190, 110, 0.25));
+  }
+  55% {
+    opacity: 0.96;
+    filter: drop-shadow(0 0 14px rgba(255, 190, 110, 0.45));
+  }
+  70% {
+    opacity: 0.9;
+    filter: drop-shadow(0 0 11px rgba(255, 190, 110, 0.35));
+  }
 }
 
-html, body{
-  height: 100%;
+@keyframes pulseGlow {
+  0% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 10px rgba(255, 190, 110, 0.28));
+  }
+  50% {
+    transform: scale(1.06);
+    filter: drop-shadow(0 0 18px rgba(255, 190, 110, 0.55));
+  }
+  100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 10px rgba(255, 190, 110, 0.28));
+  }
 }
 
-body{
-  margin:0;
-  color: var(--text);
-  background:
-    radial-gradient(900px 600px at 25% 20%, rgba(124,58,237,0.25), transparent 60%),
-    radial-gradient(700px 500px at 75% 30%, rgba(181,139,255,0.18), transparent 65%),
-    radial-gradient(900px 700px at 60% 80%, rgba(236,72,153,0.12), transparent 70%),
-    linear-gradient(135deg, var(--bg0), var(--bg1) 45%, var(--bg2));
-  overflow-x: hidden;
-  font-family: var(--font-ui), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+.logo-flicker {
+  animation: flicker 1.9s infinite ease-in-out;
 }
 
-/* Centered “app phone” stage */
-.stage{
-  min-height: 100vh;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  padding: 24px;
-  position: relative;
+.logo-pulse {
+  animation-name: pulseGlow;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
 }
 
-/* Grain + subtle CRT scanlines overlay */
-.stage::before{
-  content:"";
-  position:absolute;
-  inset:0;
-  pointer-events:none;
-  opacity: 0.22;
-  background-image:
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)' opacity='.35'/%3E%3C/svg%3E");
-  mix-blend-mode: overlay;
+/* ---------- Leaflet cosmetics ---------- */
+.leaflet-container {
+  background: transparent;
 }
 
-.stage::after{
-  content:"";
-  position:absolute;
-  inset:0;
-  pointer-events:none;
-  opacity: 0.12;
-  background:
-    repeating-linear-gradient(
-      to bottom,
-      rgba(255,255,255,0.10) 0px,
-      rgba(255,255,255,0.10) 1px,
-      rgba(0,0,0,0.00) 3px,
-      rgba(0,0,0,0.00) 6px
-    );
-  mix-blend-mode: soft-light;
+.leaflet-control-zoom a {
+  background: rgba(10, 10, 20, 0.55) !important;
+  color: rgba(255, 255, 255, 0.85) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  backdrop-filter: blur(10px);
 }
 
-/* The “phone” shell */
-.phone{
-  width: min(420px, 100%);
-  border-radius: 28px;
-  background:
-    radial-gradient(110% 90% at 30% 10%, rgba(255,255,255,0.10), transparent 55%),
-    linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.04));
-  border: 1px solid var(--stroke);
-  box-shadow: var(--shadow);
-  position: relative;
-  overflow: hidden;
+.leaflet-control-zoom a:hover {
+  background: rgba(10, 10, 20, 0.7) !important;
 }
 
-/* Inner sparkle layer */
-.phone::before{
-  content:"";
-  position:absolute;
-  inset:-40px;
-  pointer-events:none;
-  opacity: 0.55;
-  background:
-    radial-gradient(2px 2px at 10% 20%, rgba(255,255,255,0.8), transparent 60%),
-    radial-gradient(2px 2px at 35% 40%, rgba(255,255,255,0.7), transparent 60%),
-    radial-gradient(1.5px 1.5px at 70% 30%, rgba(255,255,255,0.7), transparent 60%),
-    radial-gradient(1.5px 1.5px at 85% 65%, rgba(255,255,255,0.6), transparent 60%),
-    radial-gradient(1px 1px at 20% 75%, rgba(255,255,255,0.55), transparent 60%);
-  filter: blur(0.2px);
-}
-
-.phoneContent{
-  position: relative;
-  padding: 22px 18px 18px;
-}
-
-/* Typography helpers */
-.hDisplay{
-  font-family: var(--font-display), ui-serif, Georgia, "Times New Roman", Times, serif;
-  letter-spacing: 0.02em;
-}
-
-.kicker{
-  letter-spacing: 0.28em;
-  text-transform: uppercase;
-  font-size: 12px;
-  color: rgba(255,255,255,0.70);
-}
-
-/* Glass cards */
-.card{
-  background: rgba(255,255,255,0.06);
-  border: 1px solid var(--stroke);
-  border-radius: 18px;
-}
-
-.card2{
-  background: rgba(255,255,255,0.07);
-  border: 1px solid var(--stroke2);
-  border-radius: 18px;
-}
-
-.pill{
-  border-radius: 999px;
-  border: 1px solid var(--stroke);
-  background: rgba(255,255,255,0.06);
-}
-
-/* Progress bar */
-.progressTrack{
-  height: 12px;
-  border-radius: 999px;
-  background: rgba(255,255,255,0.08);
-  border: 1px solid rgba(255,255,255,0.10);
-  overflow: hidden;
-}
-
-.progressFill{
-  height: 100%;
-  border-radius: 999px;
-  background: linear-gradient(90deg, rgba(255,255,255,0.75), rgba(181,139,255,0.95));
-  box-shadow: 0 0 20px rgba(181,139,255,0.35);
-}
-
-/* Buttons */
-.btn{
-  border-radius: 14px;
-  border: 1px solid var(--stroke2);
-  padding: 12px 14px;
-  font-weight: 700;
-  background: rgba(255,255,255,0.06);
-  color: rgba(255,255,255,0.92);
-}
-
-.btnPrimary{
-  background: linear-gradient(180deg, rgba(181,139,255,0.95), rgba(124,58,237,0.90));
-  border: 1px solid rgba(255,255,255,0.18);
-  box-shadow: 0 12px 30px rgba(124,58,237,0.25);
-}
-
-.smallMuted{
-  font-size: 12px;
-  color: rgba(255,255,255,0.62);
-  line-height: 1.35;
+.leaflet-control-attribution {
+  opacity: 0.6;
 }
