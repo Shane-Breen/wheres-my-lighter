@@ -1,165 +1,132 @@
-import Image from "next/image";
-import { headers } from "next/headers";
+"use client";
 
-import JourneyMap from "@/components/JourneyMap";
-import OwnersLog from "@/components/OwnersLog";
-import TapActions from "@/components/TapActions";
-
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
+import "leaflet/dist/leaflet.css";
+import L from "leaflet";
+import {
+  MapContainer,
+  TileLayer,
+  CircleMarker,
+  Polyline,
+  ZoomControl,
+} from "react-leaflet";
+import { useMemo } from "react";
 
 type Point = { lat: number; lng: number };
 
-type Tap = {
-  id: string;
-  lighter_id: string;
-  visitor_id: string | null;
-  lat: number | null;
-  lng: number | null;
-  accuracy_m?: number | null;
-  city?: string | null;
-  country?: string | null;
-  tapped_at: string;
-};
+function arcify(points: Point[]) {
+  // If only 2 points, add a simple mid control to create a slight arc.
+  if (points.length < 2) return points;
 
-type LighterApi = {
-  ok: boolean;
-  lighter_id: string;
-  total_taps: number;
-  unique_holders: number;
-  distance_km?: number;
-  journey?: Array<{ lat: number; lng: number }>;
-  birth_tap: Tap | null;
-  latest_tap: Tap | null;
-};
+  const a = points[0];
+  const b = points[points.length - 1];
 
-async function baseUrlFromHeaders() {
-  const h = await headers();
-  const host = h.get("x-forwarded-host") ?? h.get("host");
-  const proto = h.get("x-forwarded-proto") ?? "https";
-  return host ? `${proto}://${host}` : "http://localhost:3000";
+  const mid = { lat: (a.lat + b.lat) / 2, lng: (a.lng + b.lng) / 2 };
+
+  // Push mid point “up” a bit (perpendicular-ish) for a gentle arc.
+  const dx = b.lng - a.lng;
+  const dy = b.lat - a.lat;
+
+  const bend = 0.18; // arc strength
+  const ctrl = {
+    lat: mid.lat + dx * bend,
+    lng: mid.lng - dy * bend,
+  };
+
+  // If we have a multi-point journey, keep it (it’s already a path).
+  // If only 2 points, create a 3-point arc path.
+  return points.length === 2 ? [a, ctrl, b] : points;
 }
 
-async function getLighterData(lighterId: string): Promise<LighterApi> {
-  const base = await baseUrlFromHeaders();
-  const url = `${base}/api/lighter/${encodeURIComponent(lighterId)}`;
+export default function JourneyMap({
+  points,
+  center,
+  zoom = 5,
+  distanceKm = 0,
+}: {
+  points: Point[];
+  center: Point;
+  zoom?: number;
+  distanceKm?: number;
+}) {
+  // Prevent Leaflet default icon issues (only needed if you ever use Marker)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (L.Icon.Default as any).mergeOptions({
+    iconRetinaUrl: undefined,
+    iconUrl: undefined,
+    shadowUrl: undefined,
+  });
 
-  const res = await fetch(url, { cache: "no-store" });
-  if (!res.ok) throw new Error("Failed to load lighter");
-  return res.json();
-}
+  const arced = useMemo(() => arcify(points), [points]);
+  const poly = useMemo(
+    () => arced.map((p) => [p.lat, p.lng] as [number, number]),
+    [arced]
+  );
 
-export default async function Page({ params }: { params: { id: string } }) {
-  const lighterId = params.id;
+  const latest = points.length ? points[points.length - 1] : null;
 
-  const data = await getLighterData(lighterId);
-
-  const latest = data.latest_tap;
-  const city = latest?.city || "Unknown";
-  const country = latest?.country || "";
-  const label = country ? `${city}, ${country}` : city;
-
-  const journey = Array.isArray(data.journey) ? data.journey : [];
-  const points: Point[] = journey
-    .filter((p) => typeof p?.lat === "number" && typeof p?.lng === "number")
-    .map((p) => ({ lat: p.lat, lng: p.lng }));
-
-  const center =
-    points.length > 0 ? points[points.length - 1] : { lat: 51.7, lng: -8.5 };
-
-  const distanceKm =
-    typeof data.distance_km === "number"
-      ? Math.max(0, Math.round(data.distance_km * 10) / 10)
-      : 0;
-
-  // pulse speed “synced” to taps (more taps => slightly faster pulse, clamped)
-  const totalTaps = data.total_taps ?? 0;
-  const pulseSeconds = Math.max(0.65, 1.6 - Math.min(1, totalTaps / 200) * 0.8);
+  // Use distance to slightly scale the glow size (subtle)
+  const glow = Math.min(26, 14 + Math.log10(Math.max(1, distanceKm + 1)) * 10);
 
   return (
-    <main className="min-h-screen bg-[#070716] text-white">
-      <div className="mx-auto flex w-full max-w-md flex-col gap-4 px-4 py-10">
-        {/* Header card */}
-        <div className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-[0_0_50px_rgba(140,90,255,0.12)]">
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex items-start gap-4">
-              <div
-                className="logoWrap"
-                style={
-                  {
-                    ["--pulseDur" as any]: `${pulseSeconds}s`,
-                  } as React.CSSProperties
-                }
-              >
-                <Image
-                  src="/logoo.png"
-                  alt="Where's My Lighter logo"
-                  width={72}
-                  height={72}
-                  className="logoFlicker"
-                  priority
-                />
-              </div>
+    <div className="overflow-hidden rounded-3xl border border-white/10 bg-white/5 shadow-[0_0_40px_rgba(140,90,255,0.10)]">
+      <div className="h-[420px] w-full">
+        <MapContainer
+          center={[center.lat, center.lng]}
+          zoom={zoom}
+          zoomControl={false}
+          className="h-full w-full journeyMap"
+          preferCanvas
+        >
+          <ZoomControl position="topleft" />
 
-              <div className="min-w-0">
-                <div className="titleRow">
-                  <div className="appTitle">Where&apos;s My Lighter?</div>
-                </div>
-                <div className="appTagline">
-                  Tracking this tiny flame across the globe
-                </div>
-              </div>
-            </div>
+          {/* Dark tiles */}
+          <TileLayer
+            attribution='&copy; OpenStreetMap contributors &copy; CARTO'
+            url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+          />
 
-            <div className="text-right">
-              <div className="text-5xl font-semibold leading-none">
-                {totalTaps}
-              </div>
-              <div className="mt-2 text-[10px] tracking-[0.35em] text-white/50">
-                TOTAL TAPS
-              </div>
+          {/* Animated “distance arc” (double draw for glow) */}
+          {poly.length >= 2 ? (
+            <>
+              <Polyline
+                positions={poly}
+                // Leaflet supports className on path options
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                pathOptions={{ color: "#8b5cf6", weight: 10, opacity: 0.20, className: "journeyArcGlow" as any }}
+              />
+              <Polyline
+                positions={poly}
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                pathOptions={{ color: "#c4b5fd", weight: 3.5, opacity: 0.95, className: "journeyArc" as any }}
+              />
+            </>
+          ) : null}
 
-              <div className="mt-6 text-3xl font-semibold leading-none">
-                {data.unique_holders ?? 0}
-              </div>
-              <div className="mt-2 text-[10px] tracking-[0.35em] text-white/50">
-                OWNERS
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-6 flex items-center gap-4">
-            <div className="grid h-12 w-12 place-items-center rounded-2xl bg-purple-500/20">
-              <span className="text-xl">🌙</span>
-            </div>
-
-            <div className="min-w-0">
-              <div className="text-lg font-semibold leading-tight text-white/90">
-                {label}
-              </div>
-
-              <div className="mt-1 text-xs text-white/55">
-                Last seen{" "}
-                {latest?.tapped_at ? new Date(latest.tapped_at).toLocaleString() : "—"}
-              </div>
-
-              <div className="mt-2 text-xs text-white/45">
-                Distance travelled{" "}
-                <span className="text-white/80">{distanceKm} km</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Map */}
-        <JourneyMap points={points} center={center} zoom={5} />
-
-        {/* Owners log */}
-        <OwnersLog lighterId={lighterId} />
-
-        {/* Actions */}
-        <TapActions lighterId={lighterId} />
+          {/* Latest point glow */}
+          {latest ? (
+            <>
+              <CircleMarker
+                center={[latest.lat, latest.lng]}
+                radius={glow}
+                pathOptions={{
+                  color: "#a78bfa",
+                  opacity: 0.35,
+                  fillOpacity: 0.12,
+                }}
+              />
+              <CircleMarker
+                center={[latest.lat, latest.lng]}
+                radius={7}
+                pathOptions={{
+                  color: "#ddd6fe",
+                  opacity: 0.95,
+                  fillOpacity: 0.85,
+                }}
+              />
+            </>
+          ) : null}
+        </MapContainer>
       </div>
-    </main>
+    </div>
   );
 }
