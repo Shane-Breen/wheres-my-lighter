@@ -40,12 +40,30 @@ function isFiniteNumber(n: any): n is number {
   return typeof n === "number" && Number.isFinite(n);
 }
 
+// Haversine distance (km)
+function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
+  const R = 6371;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+
+  const sinDLat = Math.sin(dLat / 2);
+  const sinDLng = Math.sin(dLng / 2);
+
+  const x = sinDLat * sinDLat + Math.cos(lat1) * Math.cos(lat2) * sinDLng * sinDLng;
+  const c = 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+
+  return R * c;
+}
+
 export async function GET(_req: Request, context: any) {
   const lighterId = String(context?.params?.id ?? "");
 
   try {
-    // Fetch a chunk of recent taps once, then compute everything in JS.
-    // (Keeps it simple; you can optimize later with SQL/RPC if needed.)
     const recentRes = await supabaseRest(
       `taps?select=id,lighter_id,visitor_id,lat,lng,accuracy_m,city,country,tapped_at&lighter_id=eq.${encodeURIComponent(
         lighterId
@@ -62,17 +80,14 @@ export async function GET(_req: Request, context: any) {
 
     const total_taps = recent.length;
 
-    // Unique holders (visitor_id)
     const holderSet = new Set<string>();
     for (const r of recent) {
       if (r?.visitor_id) holderSet.add(String(r.visitor_id));
     }
     const unique_holders = holderSet.size;
 
-    // Latest + birth taps
     const latest_tap = recent[0] ?? null;
 
-    // Birth tap: request smallest tapped_at (only 1 row)
     const birthRes = await supabaseRest(
       `taps?select=id,lighter_id,visitor_id,lat,lng,accuracy_m,city,country,tapped_at&lighter_id=eq.${encodeURIComponent(
         lighterId
@@ -88,7 +103,7 @@ export async function GET(_req: Request, context: any) {
     const birthArr: TapRow[] = await birthRes.json();
     const birth_tap = birthArr?.[0] ?? null;
 
-    // Journey points (last 25 taps, oldest -> newest so it draws a path)
+    // Journey points (last 25 taps, oldest -> newest)
     const journey = recent
       .slice(0, 25)
       .reverse()
@@ -102,11 +117,19 @@ export async function GET(_req: Request, context: any) {
         visitor_id: t.visitor_id,
       }));
 
-    // Owners log (based on unique taps) from the same recent list
-    // We aggregate by visitor_id and keep:
-    // - taps count
-    // - last_seen (timestamp)
-    // - last location (city/country)
+    // Distance travelled (km) based on journey points
+    let distance_km = 0;
+    for (let i = 1; i < journey.length; i++) {
+      distance_km += haversineKm(
+        { lat: journey[i - 1].lat, lng: journey[i - 1].lng },
+        { lat: journey[i].lat, lng: journey[i].lng }
+      );
+    }
+    // small sanity cap (prevents crazy jumps from bad GPS)
+    if (!Number.isFinite(distance_km) || distance_km < 0) distance_km = 0;
+    if (distance_km > 50000) distance_km = 50000;
+
+    // Owners log (unique taps by visitor_id)
     const ownersMap = new Map<
       string,
       { visitor_id: string; taps: number; last_seen: string | null; city: string | null; country: string | null }
@@ -127,9 +150,6 @@ export async function GET(_req: Request, context: any) {
         });
       } else {
         existing.taps += 1;
-
-        // recent is already in DESC order, so first time we see this visitor is their latest
-        // (so do nothing for last_seen/city/country)
       }
     }
 
@@ -140,6 +160,7 @@ export async function GET(_req: Request, context: any) {
       lighter_id: lighterId,
       total_taps,
       unique_holders,
+      distance_km,
       birth_tap,
       latest_tap,
       journey_points: journey,
