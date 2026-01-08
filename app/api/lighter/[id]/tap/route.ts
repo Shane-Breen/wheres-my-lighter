@@ -5,109 +5,72 @@ function supabaseUrl() {
   if (!url) throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL");
   return url.replace(/\/$/, "");
 }
+
 function supabaseAnonKey() {
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!key) throw new Error("Missing NEXT_PUBLIC_SUPABASE_ANON_KEY");
   return key;
 }
 
-async function supabaseRest(path: string, init?: RequestInit) {
+async function supabaseInsert(path: string, body: any) {
   return fetch(`${supabaseUrl()}/rest/v1/${path}`, {
-    ...init,
+    method: "POST",
     headers: {
       apikey: supabaseAnonKey(),
       Authorization: `Bearer ${supabaseAnonKey()}`,
       "Content-Type": "application/json",
-      Prefer: "return=representation",
-      ...(init?.headers || {}),
+      Prefer: "return=minimal",
     },
-    cache: "no-store",
+    body: JSON.stringify(body),
   });
 }
 
-// Best-effort reverse geocode to city/country using OpenStreetMap Nominatim
-async function reverseGeocode(lat: number, lng: number) {
-  try {
-    const url =
-      `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(
-        String(lat)
-      )}&lon=${encodeURIComponent(String(lng))}&zoom=12&addressdetails=1`;
-
-    const res = await fetch(url, {
-      headers: {
-        // Nominatim likes a UA; Vercel will pass this along
-        "User-Agent": "wheres-my-lighter/1.0 (reverse-geocode)",
-      },
-    });
-
-    const json: any = await res.json();
-    const a = json?.address || {};
-
-    const city =
-      a.city ||
-      a.town ||
-      a.village ||
-      a.hamlet ||
-      a.suburb ||
-      a.county ||
-      null;
-
-    const country = a.country || null;
-
-    return { city, country };
-  } catch {
-    return { city: null, country: null };
-  }
+function getVisitorId(req: Request) {
+  const cookie = req.headers.get("cookie") || "";
+  const match = cookie.match(/visitor_id=([^;]+)/);
+  if (match) return match[1];
+  return crypto.randomUUID();
 }
 
 export async function POST(req: Request, context: any) {
-  const lighterId = context?.params?.id as string;
-
   try {
+    const lighterId = context?.params?.id as string;
+    if (!lighterId) {
+      return Response.json({ ok: false, error: "Missing lighter id" }, { status: 400 });
+    }
+
     const body = await req.json();
-    const visitor_id = body?.visitor_id ? String(body.visitor_id) : null;
-    const lat = Number(body?.lat);
-    const lng = Number(body?.lng);
-    const accuracy_m = body?.accuracy_m != null ? Number(body.accuracy_m) : null;
+    const { lat, lng, accuracy_m, city, country } = body;
 
-    if (!visitor_id) {
-      return Response.json({ ok: false, error: "Missing visitor_id" }, { status: 400 });
-    }
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-      return Response.json({ ok: false, error: "Missing/invalid lat/lng" }, { status: 400 });
+    if (typeof lat !== "number" || typeof lng !== "number") {
+      return Response.json({ ok: false, error: "Missing lat/lng" }, { status: 400 });
     }
 
-    // reverse geocode (best effort)
-    const { city, country } = await reverseGeocode(lat, lng);
+    const visitor_id = getVisitorId(req);
 
-    const insertRes = await supabaseRest("taps", {
-      method: "POST",
-      body: JSON.stringify([
-        {
-          lighter_id: lighterId,
-          visitor_id,
-          lat,
-          lng,
-          accuracy_m,
-          city,
-          country,
-        },
-      ]),
+    await supabaseInsert("taps", {
+      lighter_id: lighterId,
+      visitor_id,
+      lat,
+      lng,
+      accuracy_m: accuracy_m ?? null,
+      city: city ?? null,
+      country: country ?? null,
+      tapped_at: new Date().toISOString(),
     });
 
-    const data = await insertRes.json();
-
-    if (!insertRes.ok) {
-      return Response.json(
-        { ok: false, error: "Insert failed", details: data },
-        { status: 500 }
-      );
-    }
-
-    return Response.json({ ok: true, tap: Array.isArray(data) ? data[0] : data });
+    return new Response(
+      JSON.stringify({ ok: true }),
+      {
+        status: 200,
+        headers: {
+          "Set-Cookie": `visitor_id=${visitor_id}; Path=/; Max-Age=31536000; SameSite=Lax`,
+        },
+      }
+    );
   } catch (e: any) {
     return Response.json(
-      { ok: false, error: e?.message ?? "Insert failed", details: String(e) },
+      { ok: false, error: e?.message ?? "Tap failed" },
       { status: 500 }
     );
   }
