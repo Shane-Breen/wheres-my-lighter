@@ -3,9 +3,9 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-function snapTo1km(lat: number, lng: number) {
-  // ~1.11km per 0.01° latitude; longitude varies but still coarse enough for privacy.
-  const step = 0.01;
+function snapWithin1km(lat: number, lng: number) {
+  // 0.005° lat ≈ 0.55km. Even diagonally, error stays under ~1km.
+  const step = 0.005;
   const snappedLat = Math.round(lat / step) * step;
   const snappedLng = Math.round(lng / step) * step;
   return {
@@ -16,18 +16,15 @@ function snapTo1km(lat: number, lng: number) {
 
 async function reverseGeocodeTownOnly(lat: number, lng: number) {
   try {
-    // Privacy: geocode snapped coords (not precise GPS)
-    const snapped = snapTo1km(lat, lng);
+    const snapped = snapWithin1km(lat, lng);
 
     const url =
       `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(
         snapped.lat
-      )}&lon=${encodeURIComponent(snapped.lng)}&zoom=10&addressdetails=1`;
+      )}&lon=${encodeURIComponent(snapped.lng)}&zoom=12&addressdetails=1`;
 
     const res = await fetch(url, {
-      headers: {
-        Accept: "application/json",
-      },
+      headers: { Accept: "application/json" },
     });
 
     if (!res.ok) return { city: null, country: null };
@@ -35,18 +32,19 @@ async function reverseGeocodeTownOnly(lat: number, lng: number) {
     const data: any = await res.json();
     const addr = data?.address || {};
 
-    // ✅ Town only (never county)
+    // ✅ Town-first. Never county.
     const city =
       addr.town ||
-      addr.city ||
       addr.village ||
       addr.hamlet ||
+      addr.city ||
       addr.locality ||
+      addr.suburb ||
       null;
 
     const country = addr.country || null;
 
-    // Extra guard: if something slips through as "County X", drop it.
+    // Guard: never allow "County X" to be stored as city
     const safeCity =
       typeof city === "string" && city.toLowerCase().startsWith("county ")
         ? null
@@ -82,7 +80,7 @@ export default function TapActions({ lighterId }: { lighterId: string }) {
         });
       });
 
-      // Precise GPS (stored securely server-side)
+      // Precise GPS (stored server-side)
       const lat = position.coords.latitude;
       const lng = position.coords.longitude;
       const accuracy_m = Math.round(position.coords.accuracy || 0);
@@ -98,7 +96,7 @@ export default function TapActions({ lighterId }: { lighterId: string }) {
           lat,
           lng,
           accuracy_m,
-          city,    // ✅ now never "County Cork"
+          city,
           country,
         }),
       });
@@ -144,8 +142,7 @@ export default function TapActions({ lighterId }: { lighterId: string }) {
       </button>
 
       <p className="text-xs leading-relaxed text-white/50">
-        We request location permission to log a sighting. Precise GPS is stored securely.
-        Only the nearest town is displayed publicly (approx. 1km).
+        Precise GPS is stored securely. Public location is approximate (≤1km) and shows the nearest town when possible.
       </p>
 
       {msg ? (
