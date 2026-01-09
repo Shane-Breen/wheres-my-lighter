@@ -35,23 +35,24 @@ export default async function AvatarPreviewPage({ params }: PageProps) {
   const { id: lighterId } = await params;
   const data = await getLighterData(lighterId);
 
-  const journey = Array.isArray(data?.journey) ? data.journey : [];
+  const journey: any[] = Array.isArray(data?.journey) ? data.journey : [];
   const totalTaps = journey.length;
 
-  const countries = journey
-    .map((p: any) => p?.country)
-    .filter((c: any) => typeof c === "string" && c.trim().length > 0)
-    .map((c: string) => c.trim());
+  const countriesRaw: string[] = journey
+    .map((p) => p?.country)
+    .filter((c) => typeof c === "string" && c.trim().length > 0)
+    .map((c) => String(c).trim());
 
-  const cities = journey
-    .map((p: any) => p?.city)
-    .filter((c: any) => typeof c === "string" && c.trim().length > 0)
-    .map((c: string) => c.trim());
+  const citiesRaw: string[] = journey
+    .map((p) => p?.city)
+    .filter((c) => typeof c === "string" && c.trim().length > 0)
+    .map((c) => String(c).trim());
 
-  const uniqCountries = Array.from(new Set(countries));
-  const uniqCities = Array.from(new Set(cities));
+  // Force string[] typing to avoid Set<unknown> inference in strict builds
+  const uniqCountries: string[] = Array.from(new Set<string>(countriesRaw));
+  const uniqCities: string[] = Array.from(new Set<string>(citiesRaw));
 
-  const nightTaps = journey.filter((p: any) => {
+  const nightTaps = journey.filter((p) => {
     const hour = safeHour(p?.tapped_at);
     if (hour === null) return false;
     return hour >= 21 || hour < 6;
@@ -134,12 +135,8 @@ export default async function AvatarPreviewPage({ params }: PageProps) {
                 ))}
               </div>
 
-              <div className="mt-4 text-xs text-white/40">
-                (Debug) Rule: {avatar.debug_rule}
-              </div>
-              <div className="mt-1 text-xs text-white/40">
-                (Debug) Seed: {avatar.seed}
-              </div>
+              <div className="mt-4 text-xs text-white/40">(Debug) Rule: {avatar.debug_rule}</div>
+              <div className="mt-1 text-xs text-white/40">(Debug) Seed: {avatar.seed}</div>
             </div>
           </div>
         </div>
