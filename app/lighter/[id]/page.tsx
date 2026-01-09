@@ -1,31 +1,137 @@
 import JourneyMap from "@/components/JourneyMap";
 import OwnersLog from "@/components/OwnersLog";
 import TapActions from "@/components/TapActions";
-import { headers } from "next/headers";
 
-async function getLighterDataSafe(lighterId: string) {
-  try {
-    // Next 15: headers() is async
-    const h = await headers();
-    const host = h.get("host");
-    const proto = h.get("x-forwarded-proto") || "https";
-    const base = host ? `${proto}://${host}` : "";
+export const runtime = "nodejs";
 
-    const res = await fetch(
-      `${base}/api/lighter/${encodeURIComponent(lighterId)}`,
-      { cache: "no-store" }
-    );
+function supabaseUrl() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (!url) throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL");
+  return url.replace(/\/$/, "");
+}
+function supabaseAnonKey() {
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!key) throw new Error("Missing NEXT_PUBLIC_SUPABASE_ANON_KEY");
+  return key;
+}
 
-    if (!res.ok) {
-      const t = await res.text().catch(() => "");
-      return { ok: false as const, error: t || `API returned ${res.status}` };
-    }
+async function supabaseRest(path: string, init?: RequestInit) {
+  return fetch(`${supabaseUrl()}/rest/v1/${path}`, {
+    ...init,
+    headers: {
+      apikey: supabaseAnonKey(),
+      Authorization: `Bearer ${supabaseAnonKey()}`,
+      "Content-Type": "application/json",
+      ...(init?.headers || {}),
+    },
+    cache: "no-store",
+  });
+}
 
-    const json = await res.json();
-    return { ok: true as const, data: json };
-  } catch (e: any) {
-    return { ok: false as const, error: e?.message || "Failed to load lighter" };
+function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
+  const R = 6371;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+
+  const s =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+
+  const c = 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s));
+  return R * c;
+}
+
+function toNumber(v: any): number | null {
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "string") {
+    const n = Number(v);
+    if (Number.isFinite(n)) return n;
   }
+  return null;
+}
+
+async function getLighterDataDirect(lighterId: string) {
+  // total taps
+  const countRes = await supabaseRest(
+    `taps?select=id&lighter_id=eq.${encodeURIComponent(lighterId)}`,
+    { method: "GET" }
+  );
+  const taps = await countRes.json();
+  const total_taps = Array.isArray(taps) ? taps.length : 0;
+
+  // unique holders
+  const uniqRes = await supabaseRest(
+    `taps?select=visitor_id&lighter_id=eq.${encodeURIComponent(lighterId)}`,
+    { method: "GET" }
+  );
+  const uniqRows = await uniqRes.json();
+  const set = new Set<string>();
+  if (Array.isArray(uniqRows)) {
+    for (const r of uniqRows) if (r?.visitor_id) set.add(String(r.visitor_id));
+  }
+  const unique_holders = set.size;
+
+  // birth tap
+  const birthRes = await supabaseRest(
+    `taps?select=id,lighter_id,visitor_id,lat,lng,accuracy_m,city,country,tapped_at&lighter_id=eq.${encodeURIComponent(
+      lighterId
+    )}&order=tapped_at.asc&limit=1`,
+    { method: "GET" }
+  );
+  const birthArr = await birthRes.json();
+  const birth_tap = Array.isArray(birthArr) && birthArr[0] ? birthArr[0] : null;
+
+  // latest tap
+  const latestRes = await supabaseRest(
+    `taps?select=id,lighter_id,visitor_id,lat,lng,accuracy_m,city,country,tapped_at&lighter_id=eq.${encodeURIComponent(
+      lighterId
+    )}&order=tapped_at.desc&limit=1`,
+    { method: "GET" }
+  );
+  const latestArr = await latestRes.json();
+  const latest_tap = Array.isArray(latestArr) && latestArr[0] ? latestArr[0] : null;
+
+  // journey
+  const journeyRes = await supabaseRest(
+    `taps?select=lat,lng,city,country,accuracy_m,tapped_at,visitor_id&lighter_id=eq.${encodeURIComponent(
+      lighterId
+    )}&order=tapped_at.asc`,
+    { method: "GET" }
+  );
+  const journey = await journeyRes.json();
+
+  // distance
+  let distance_km = 0;
+  if (Array.isArray(journey)) {
+    const pts = journey
+      .map((p) => {
+        const lat = toNumber(p?.lat);
+        const lng = toNumber(p?.lng);
+        if (lat === null || lng === null) return null;
+        return { lat, lng };
+      })
+      .filter(Boolean) as { lat: number; lng: number }[];
+
+    for (let i = 1; i < pts.length; i++) {
+      distance_km += haversineKm(pts[i - 1], pts[i]);
+    }
+  }
+
+  return {
+    ok: true,
+    lighter_id: lighterId,
+    total_taps,
+    unique_holders,
+    distance_km: Math.round(distance_km * 10) / 10,
+    birth_tap,
+    latest_tap,
+    journey: Array.isArray(journey) ? journey : [],
+  };
 }
 
 type PageProps = {
@@ -35,10 +141,16 @@ type PageProps = {
 export default async function Page({ params }: PageProps) {
   const { id: lighterId } = await params;
 
-  const result = await getLighterDataSafe(lighterId);
+  let data: any = null;
+  let error: string | null = null;
 
-  // Always render a page (no white screens)
-  if (!result.ok) {
+  try {
+    data = await getLighterDataDirect(lighterId);
+  } catch (e: any) {
+    error = e?.message || "Failed to load lighter";
+  }
+
+  if (!data || error) {
     return (
       <main className="min-h-screen bg-[#070716] text-white">
         <div className="mx-auto flex w-full max-w-md flex-col gap-4 px-4 py-10">
@@ -58,22 +170,16 @@ export default async function Page({ params }: PageProps) {
             <div className="mt-5 rounded-2xl border border-red-500/20 bg-red-500/10 p-4">
               <div className="text-sm font-semibold">Couldn’t load this lighter</div>
               <div className="mt-1 text-xs text-white/70 break-words">
-                {result.error}
-              </div>
-              <div className="mt-3 text-xs text-white/50">
-                This is a server-side fetch issue (API/RLS/env). The UI is safe.
+                {error || "Unknown error"}
               </div>
             </div>
           </div>
 
-          {/* Keep actions available for testing */}
           <TapActions lighterId={lighterId} />
         </div>
       </main>
     );
   }
-
-  const data = result.data;
 
   const latest = data?.latest_tap;
   const city = latest?.city || "Unknown";
@@ -83,23 +189,9 @@ export default async function Page({ params }: PageProps) {
   const journey = Array.isArray(data?.journey) ? data.journey : [];
   const points = journey
     .map((p: any) => {
-      const lat =
-        typeof p?.lat === "number"
-          ? p.lat
-          : typeof p?.lat === "string"
-          ? Number(p.lat)
-          : null;
-
-      const lng =
-        typeof p?.lng === "number"
-          ? p.lng
-          : typeof p?.lng === "string"
-          ? Number(p.lng)
-          : null;
-
-      if (lat === null || lng === null || !Number.isFinite(lat) || !Number.isFinite(lng)) {
-        return null;
-      }
+      const lat = toNumber(p?.lat);
+      const lng = toNumber(p?.lng);
+      if (lat === null || lng === null) return null;
       return { lat, lng };
     })
     .filter(Boolean) as { lat: number; lng: number }[];
