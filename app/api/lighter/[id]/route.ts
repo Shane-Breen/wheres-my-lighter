@@ -42,6 +42,10 @@ function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: num
   return R * c;
 }
 
+function hasText(v: any) {
+  return typeof v === "string" && v.trim().length > 0;
+}
+
 export async function GET(_req: Request, context: any) {
   const lighterId = context?.params?.id as string;
 
@@ -84,7 +88,29 @@ export async function GET(_req: Request, context: any) {
       { method: "GET" }
     );
     const latestArr = await latestRes.json();
-    const latest_tap = Array.isArray(latestArr) && latestArr[0] ? latestArr[0] : null;
+    let latest_tap = Array.isArray(latestArr) && latestArr[0] ? latestArr[0] : null;
+
+    // If latest tap has no city, pull the most recent tap WITH a city and use it for display fallback
+    if (latest_tap && !hasText(latest_tap.city)) {
+      const fallbackRes = await supabaseRest(
+        `taps?select=city,country&lighter_id=eq.${encodeURIComponent(
+          lighterId
+        )}&city=not.is.null&order=tapped_at.desc&limit=1`,
+        { method: "GET" }
+      );
+      const fallbackArr = await fallbackRes.json();
+      const fb = Array.isArray(fallbackArr) && fallbackArr[0] ? fallbackArr[0] : null;
+
+      if (fb && hasText(fb.city)) {
+        // Keep the real timestamp + gps of the latest tap,
+        // only fill missing display fields so the top card stays accurate/useful.
+        latest_tap = {
+          ...latest_tap,
+          city: fb.city,
+          country: hasText(latest_tap.country) ? latest_tap.country : fb.country,
+        };
+      }
+    }
 
     // journey taps (ordered)
     const journeyRes = await supabaseRest(
@@ -112,7 +138,7 @@ export async function GET(_req: Request, context: any) {
       lighter_id: lighterId,
       total_taps,
       unique_holders,
-      distance_km: Math.round(distance_km * 10) / 10, // 1 decimal
+      distance_km: Math.round(distance_km * 10) / 10,
       birth_tap,
       latest_tap,
       journey: Array.isArray(journey) ? journey : [],
