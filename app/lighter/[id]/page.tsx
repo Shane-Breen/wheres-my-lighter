@@ -5,7 +5,8 @@ import { headers } from "next/headers";
 
 async function getLighterDataSafe(lighterId: string) {
   try {
-    const h = headers();
+    // Next 15: headers() is async
+    const h = await headers();
     const host = h.get("host");
     const proto = h.get("x-forwarded-proto") || "https";
     const base = host ? `${proto}://${host}` : "";
@@ -65,7 +66,7 @@ export default async function Page({ params }: PageProps) {
             </div>
           </div>
 
-          {/* Still show actions so you can keep testing */}
+          {/* Keep actions available for testing */}
           <TapActions lighterId={lighterId} />
         </div>
       </main>
@@ -83,10 +84,22 @@ export default async function Page({ params }: PageProps) {
   const points = journey
     .map((p: any) => {
       const lat =
-        typeof p?.lat === "number" ? p.lat : typeof p?.lat === "string" ? Number(p.lat) : null;
+        typeof p?.lat === "number"
+          ? p.lat
+          : typeof p?.lat === "string"
+          ? Number(p.lat)
+          : null;
+
       const lng =
-        typeof p?.lng === "number" ? p.lng : typeof p?.lng === "string" ? Number(p.lng) : null;
-      if (lat === null || lng === null || !Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+        typeof p?.lng === "number"
+          ? p.lng
+          : typeof p?.lng === "string"
+          ? Number(p.lng)
+          : null;
+
+      if (lat === null || lng === null || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+        return null;
+      }
       return { lat, lng };
     })
     .filter(Boolean) as { lat: number; lng: number }[];
@@ -137,12 +150,16 @@ export default async function Page({ params }: PageProps) {
 
             <div className="text-right">
               <div className="text-4xl font-semibold leading-none">{data?.total_taps ?? 0}</div>
-              <div className="mt-1 text-[10px] tracking-[0.25em] text-white/50">TOTAL TAPS</div>
+              <div className="mt-1 text-[10px] tracking-[0.25em] text-white/50">
+                TOTAL TAPS
+              </div>
 
               <div className="mt-4 text-3xl font-semibold leading-none">
                 {data?.unique_holders ?? 0}
               </div>
-              <div className="mt-1 text-[10px] tracking-[0.25em] text-white/50">OWNERS</div>
+              <div className="mt-1 text-[10px] tracking-[0.25em] text-white/50">
+                OWNERS
+              </div>
             </div>
           </div>
         </div>
