@@ -20,8 +20,9 @@ async function getLighterData(lighterId: string) {
   return res.json();
 }
 
-export default async function Page({ params }: { params: { id: string } }) {
-  const lighterId = params.id;
+// ✅ Next 15.5: params is a Promise
+export default async function Page(props: { params: Promise<{ id: string }> }) {
+  const { id: lighterId } = await props.params;
 
   const data = await getLighterData(lighterId);
 
@@ -46,7 +47,6 @@ export default async function Page({ params }: { params: { id: string } }) {
         {/* Top card */}
         <div className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-[0_0_50px_rgba(140,90,255,0.12)]">
           <div className="flex items-start gap-5">
-            {/* Logo (bigger + flame-only flicker handled in CSS) */}
             <LogoFlicker />
 
             <div className="flex-1">
@@ -85,13 +85,8 @@ export default async function Page({ params }: { params: { id: string } }) {
           </div>
         </div>
 
-        {/* Map */}
         <JourneyMap points={points} center={center} zoom={5} />
-
-        {/* Owners log */}
         <OwnersLog lighterId={lighterId} />
-
-        {/* Actions */}
         <TapActions lighterId={lighterId} />
       </div>
     </main>
