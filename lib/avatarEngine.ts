@@ -1,68 +1,100 @@
+import { makeSeed } from "@/lib/avatarSeed";
+
 type AvatarInput = {
-  nightRatio: number;     // 0..1
-  countriesCount: number;
-  citiesCount: number;
+  lighterId: string;
+  nightRatio: number; // 0..1
+  countries: string[];
+  cities: string[];
   totalTaps: number;
 };
 
-type AvatarResult = {
+export type AvatarResult = {
   name: string;
   story: string[];
-  debug_rule: string; // tells you which rule fired
+  mood: "wobble" | "calm" | "chaos";
+  seed: string;
+  debug_rule: string;
 };
 
+function pick<T>(arr: T[], seed: string): T {
+  const n = parseInt(seed.slice(0, 6), 16) || 0;
+  return arr[n % arr.length];
+}
+
 export function generateAvatarDebug(input: AvatarInput): AvatarResult {
+  const start = input.countries[0] || "?";
+  const end = input.countries[input.countries.length - 1] || "?";
   const night = input.nightRatio;
 
+  // Seed derived from journey fingerprints (deterministic)
+  const baseSeed = makeSeed(
+    `${input.lighterId}|${start}|${end}|${input.countries.length}|${input.cities.length}|${night.toFixed(2)}|${input.totalTaps}`
+  );
+
+  // Small flavour pool (deterministic selection)
+  const extraLines = [
+    "Has no memory of consenting to this itinerary.",
+    "Emotionally attached to last orders.",
+    "Operates on vibes, not plans.",
+    "Frequently misplaced. Rarely gone.",
+    "Has seen things. Won’t elaborate.",
+    "Allergic to bedtime.",
+  ];
+
   // 1) The Party Liability
-  // mostly night activity + decent tap volume
   if (night >= 0.6 && input.totalTaps >= 5) {
     return {
       name: "The Party Liability",
+      mood: "wobble",
+      seed: makeSeed(baseSeed + "|party"),
       story: [
         "Never invited.",
         "Always there.",
-        "Usually appears near closing time.",
+        pick(extraLines, baseSeed),
       ],
       debug_rule: "night>=0.6 && totalTaps>=5",
     };
   }
 
   // 2) The Border Hopper
-  // lots of movement variety
-  if (input.countriesCount >= 3) {
+  if (input.countries.length >= 3) {
     return {
       name: "The Border Hopper",
+      mood: "chaos",
+      seed: makeSeed(baseSeed + "|border"),
       story: [
         "Never stayed long.",
         "Always crossed lines drawn by others.",
-        "Has no concept of a ‘quiet night’.",
+        pick(extraLines, baseSeed),
       ],
-      debug_rule: "countriesCount>=3",
+      debug_rule: "countries>=3",
     };
   }
 
   // 3) The Quiet Local
-  // many taps, not many places
-  if (input.totalTaps >= 10 && input.citiesCount <= 2) {
+  if (input.totalTaps >= 10 && input.cities.length <= 2) {
     return {
       name: "The Quiet Local",
+      mood: "calm",
+      seed: makeSeed(baseSeed + "|local"),
       story: [
         "Didn’t go far.",
         "Still made the rounds.",
-        "A town legend in pocket-sized form.",
+        pick(extraLines, baseSeed),
       ],
-      debug_rule: "totalTaps>=10 && citiesCount<=2",
+      debug_rule: "totalTaps>=10 && cities<=2",
     };
   }
 
   // Default: Pocket Nomad
   return {
     name: "The Pocket Nomad",
+    mood: "calm",
+    seed: makeSeed(baseSeed + "|nomad"),
     story: [
       "Small flame. Big personality.",
       "Moves when it feels like it.",
-      "Somehow always comes back.",
+      pick(extraLines, baseSeed),
     ],
     debug_rule: "default",
   };
