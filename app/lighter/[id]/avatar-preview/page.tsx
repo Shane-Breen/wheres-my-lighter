@@ -48,6 +48,15 @@ function labelFrom(city?: any, country?: any) {
   return "—";
 }
 
+function toNumber(v: any): number | null {
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "string") {
+    const n = Number(v);
+    if (Number.isFinite(n)) return n;
+  }
+  return null;
+}
+
 export default async function AvatarPreviewPage({ params }: PageProps) {
   const { id: lighterId } = await params;
   const data = await getLighterData(lighterId);
@@ -55,12 +64,18 @@ export default async function AvatarPreviewPage({ params }: PageProps) {
   const journey: any[] = Array.isArray(data?.journey) ? data.journey : [];
   const totalTaps = journey.length;
 
+  // IMPORTANT FIX: lat/lng may arrive as strings from Supabase REST
   const points = journey
-    .filter((p) => typeof p?.lat === "number" && typeof p?.lng === "number")
-    .map((p) => ({ lat: p.lat as number, lng: p.lng as number }));
+    .map((p) => {
+      const lat = toNumber(p?.lat);
+      const lng = toNumber(p?.lng);
+      if (lat === null || lng === null) return null;
+      return { lat, lng };
+    })
+    .filter(Boolean) as { lat: number; lng: number }[];
 
   const center =
-    points.length > 0 ? points[points.length - 1] : { lat: 51.7, lng: -8.5 };
+    points.length > 0 ? points[points.length - 1] : { lat: 34.0522, lng: -118.2437 }; // default LA
 
   const countriesRaw: string[] = journey
     .map((p) => p?.country)
@@ -104,11 +119,10 @@ export default async function AvatarPreviewPage({ params }: PageProps) {
           <div className="text-[12px] tracking-[0.25em] text-white/50">AVATAR PREVIEW</div>
           <div className="mt-2 text-xl font-semibold">Debug • {lighterId}</div>
           <div className="mt-1 text-xs text-white/40">
-            Dark map + gold arc. Zoom-limited for privacy.
+            Points detected: <span className="text-white/70">{points.length}</span>
           </div>
         </div>
 
-        {/* Birth + Latest (quick clarity) */}
         <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
           <div className="text-[12px] tracking-[0.25em] text-white/50">PLACE OF BIRTH (FIRST TAP)</div>
           <div className="mt-2 text-lg font-semibold">{birthLabel}</div>
@@ -123,7 +137,6 @@ export default async function AvatarPreviewPage({ params }: PageProps) {
           </div>
         </div>
 
-        {/* Avatar output */}
         <div className="rounded-3xl border border-purple-500/30 bg-purple-500/10 p-5 shadow-[0_0_60px_rgba(180,120,255,0.10)]">
           <div className="flex items-start gap-4">
             <div className="shrink-0">
@@ -145,10 +158,8 @@ export default async function AvatarPreviewPage({ params }: PageProps) {
           </div>
         </div>
 
-        {/* Map */}
         <AvatarJourneyMap points={points} center={center} zoom={4} />
 
-        {/* Journey signals */}
         <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
           <div className="text-[12px] tracking-[0.25em] text-white/50">JOURNEY SIGNALS</div>
 
