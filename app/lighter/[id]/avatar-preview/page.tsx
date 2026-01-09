@@ -1,4 +1,5 @@
 import { headers } from "next/headers";
+import { generateAvatarDebug } from "@/lib/avatarEngine";
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -10,33 +11,34 @@ async function getLighterData(lighterId: string) {
   const proto = h.get("x-forwarded-proto") || "https";
   const base = host ? `${proto}://${host}` : "";
 
-  const res = await fetch(
-    `${base}/api/lighter/${encodeURIComponent(lighterId)}`,
-    { cache: "no-store" }
-  );
+  const res = await fetch(`${base}/api/lighter/${encodeURIComponent(lighterId)}`, {
+    cache: "no-store",
+  });
 
-  if (!res.ok) {
-    throw new Error("Failed to load lighter");
-  }
-
+  if (!res.ok) throw new Error("Failed to load lighter");
   return res.json();
+}
+
+function safeHour(ts: any): number | null {
+  try {
+    if (!ts) return null;
+    const d = new Date(ts);
+    if (Number.isNaN(d.getTime())) return null;
+    return d.getHours();
+  } catch {
+    return null;
+  }
 }
 
 export default async function AvatarPreviewPage({ params }: PageProps) {
   const { id: lighterId } = await params;
   const data = await getLighterData(lighterId);
 
-  return (
-    <main className="min-h-screen bg-[#070716] text-white">
-      <div className="mx-auto max-w-md px-4 py-10 space-y-6">
-        <h1 className="text-xl font-semibold">
-          Avatar Preview (Debug)
-        </h1>
+  const journey = Array.isArray(data?.journey) ? data.journey : [];
+  const totalTaps = journey.length;
 
-        <pre className="text-xs bg-black/40 p-4 rounded-xl overflow-x-auto">
-          {JSON.stringify(data?.latest_tap, null, 2)}
-        </pre>
-      </div>
-    </main>
-  );
-}
+  const countries = Array.from(
+    new Set(
+      journey
+        .map((p: any) => p?.country)
+        .filter((c: any) => typeof c === "string" && c.trim().le
