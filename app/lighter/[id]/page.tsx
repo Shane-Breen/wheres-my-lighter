@@ -21,8 +21,8 @@ type PageProps = {
   params: Promise<{ id: string }>;
 };
 
-function isCounty(value?: string) {
-  return typeof value === "string" && value.toLowerCase().startsWith("county ");
+function isCountyLabel(v?: string | null) {
+  return typeof v === "string" && v.toLowerCase().startsWith("county ");
 }
 
 export default async function Page({ params }: PageProps) {
@@ -31,20 +31,33 @@ export default async function Page({ params }: PageProps) {
 
   const latest = data?.latest_tap;
 
-  const rawCity = latest?.city;
-  const country = latest?.country || "";
+  const city = typeof latest?.city === "string" ? latest.city.trim() : "";
+  const county = typeof latest?.county === "string" ? latest.county.trim() : "";
+  const country = typeof latest?.country === "string" ? latest.country.trim() : "";
 
-  // 🔒 Town logic:
-  // - If city is "County Cork", ignore it
-  // - Prefer real town names like "Skibbereen"
-  let locationLabel = "Unknown location";
+  /**
+   * Display priority:
+   * 1) Town / village
+   * 2) County
+   * 3) Country
+   * (never show "Unknown")
+   */
+  let locationLabel = "";
 
-  if (rawCity && !isCounty(rawCity)) {
-    locationLabel = country ? `${rawCity}, ${country}` : rawCity;
-  } else if (rawCity && isCounty(rawCity)) {
-    locationLabel = country ? `${rawCity}, ${country}` : rawCity;
-  } else if (country) {
+  if (city && !isCountyLabel(city)) {
+    locationLabel = city;
+  } else if (county) {
+    locationLabel = county;
+  } else if (city && isCountyLabel(city)) {
+    // Backward compatibility if some old rows still have county in city
+    locationLabel = city;
+  } else {
     locationLabel = country;
+  }
+
+  // Add country only when it adds information
+  if (country && locationLabel && locationLabel !== country) {
+    locationLabel = `${locationLabel}, ${country}`;
   }
 
   const journey = Array.isArray(data?.journey) ? data.journey : [];
@@ -62,7 +75,6 @@ export default async function Page({ params }: PageProps) {
       <div className="mx-auto flex w-full max-w-md flex-col gap-4 px-4 py-10">
         {/* Top card */}
         <div className="rounded-3xl border border-white/10 bg-white/5 p-5 shadow-[0_0_50px_rgba(140,90,255,0.12)]">
-          {/* Header */}
           <div className="flex items-center gap-4">
             <img src="/logoo.png" alt="Lighter logo" className="h-16 w-16" />
 
@@ -76,7 +88,6 @@ export default async function Page({ params }: PageProps) {
             </div>
           </div>
 
-          {/* Info */}
           <div className="mt-5 flex items-center gap-4">
             <div className="grid h-12 w-12 place-items-center rounded-2xl bg-purple-500/20">
               🌙
@@ -84,12 +95,14 @@ export default async function Page({ params }: PageProps) {
 
             <div className="flex-1">
               <div className="text-xl font-semibold">{locationLabel}</div>
+
               <div className="mt-1 text-xs text-white/50">
                 Last seen{" "}
                 {latest?.tapped_at
                   ? new Date(latest.tapped_at).toLocaleString()
                   : "—"}
               </div>
+
               <div className="mt-2 text-xs text-white/40">
                 Distance travelled{" "}
                 <span className="text-white/80">{distanceKm} km</span>
