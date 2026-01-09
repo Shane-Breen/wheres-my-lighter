@@ -34,10 +34,18 @@ function safeHour(ts: any): number | null {
 
 function normalizeCountry(s: string) {
   const t = s.trim();
-  // keep it simple: unify common Ireland variants
   if (/^éire/i.test(t)) return "Ireland";
   if (/ireland/i.test(t)) return "Ireland";
   return t;
+}
+
+function labelFrom(city?: any, country?: any) {
+  const c = typeof city === "string" && city.trim().length ? city.trim() : "";
+  const k = typeof country === "string" && country.trim().length ? country.trim() : "";
+  if (c && k) return `${c}, ${k}`;
+  if (c) return c;
+  if (k) return k;
+  return "—";
 }
 
 export default async function AvatarPreviewPage({ params }: PageProps) {
@@ -83,6 +91,12 @@ export default async function AvatarPreviewPage({ params }: PageProps) {
     totalTaps,
   });
 
+  const birth = data?.birth_tap;
+  const latest = data?.latest_tap;
+
+  const birthLabel = labelFrom(birth?.city, normalizeCountry(String(birth?.country || "")));
+  const latestLabel = labelFrom(latest?.city, normalizeCountry(String(latest?.country || "")));
+
   return (
     <main className="min-h-screen bg-[#070716] text-white">
       <div className="mx-auto w-full max-w-md px-4 py-10 space-y-5">
@@ -90,7 +104,22 @@ export default async function AvatarPreviewPage({ params }: PageProps) {
           <div className="text-[12px] tracking-[0.25em] text-white/50">AVATAR PREVIEW</div>
           <div className="mt-2 text-xl font-semibold">Debug • {lighterId}</div>
           <div className="mt-1 text-xs text-white/40">
-            Map is dark + zoom-limited for privacy (max zoom 5).
+            Dark map + gold arc. Zoom-limited for privacy.
+          </div>
+        </div>
+
+        {/* Birth + Latest (quick clarity) */}
+        <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
+          <div className="text-[12px] tracking-[0.25em] text-white/50">PLACE OF BIRTH (FIRST TAP)</div>
+          <div className="mt-2 text-lg font-semibold">{birthLabel}</div>
+          <div className="mt-1 text-xs text-white/40">
+            {birth?.tapped_at ? new Date(birth.tapped_at).toLocaleString() : "—"}
+          </div>
+
+          <div className="mt-4 text-[12px] tracking-[0.25em] text-white/50">CURRENT LOCATION (LATEST TAP)</div>
+          <div className="mt-2 text-lg font-semibold">{latestLabel}</div>
+          <div className="mt-1 text-xs text-white/40">
+            {latest?.tapped_at ? new Date(latest.tapped_at).toLocaleString() : "—"}
           </div>
         </div>
 
