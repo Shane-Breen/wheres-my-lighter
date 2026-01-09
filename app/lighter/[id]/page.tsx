@@ -48,18 +48,29 @@ export default async function Page({ params }: PageProps) {
         <div className="rounded-3xl border border-white/10 bg-white/5 p-5 shadow-[0_0_50px_rgba(140,90,255,0.12)]">
           {/* Header row */}
           <div className="flex items-center gap-4">
-            <img
-              src="/logoo.png"
-              alt="Lighter logo"
-              className="h-14 w-14"
-            />
+            {/* Logo (prominent) + flame-only flicker overlay */}
+            <div className="relative shrink-0">
+              <img
+                src="/logoo.png"
+                alt="Lighter logo"
+                className="h-16 w-16 drop-shadow-[0_10px_22px_rgba(255,140,64,0.18)]"
+              />
 
-            <div className="flex flex-col overflow-hidden">
-              <h1 className="text-[18px] font-semibold leading-tight whitespace-nowrap overflow-hidden text-ellipsis">
+              {/* Subtle flame-only flicker (overlay) */}
+              <div className="pointer-events-none absolute left-1/2 top-[6px] h-6 w-6 -translate-x-1/2">
+                <div className="wm-flame absolute inset-0 rounded-full blur-[0.5px]" />
+                <div className="wm-flameCore absolute inset-1 rounded-full blur-[1px]" />
+              </div>
+            </div>
+
+            <div className="min-w-0 flex-1">
+              {/* MUST fit on ONE line: clamp + nowrap (no truncation) */}
+              <h1 className="wm-title whitespace-nowrap font-semibold leading-tight tracking-tight">
                 Where’s My Lighter?
               </h1>
 
-              <p className="mt-0.5 text-[9px] leading-tight text-white/40 whitespace-nowrap overflow-hidden text-ellipsis">
+              {/* subtle, smaller, one line */}
+              <p className="wm-tagline mt-0.5 whitespace-nowrap leading-tight text-white/40">
                 Tracking this tiny flame across the globe
               </p>
             </div>
@@ -112,6 +123,63 @@ export default async function Page({ params }: PageProps) {
         {/* Actions */}
         <TapActions lighterId={lighterId} />
       </div>
+
+      {/* Local styles to guarantee one-line title + subtle flame-only flicker */}
+      <style jsx global>{`
+        .wm-title {
+          font-size: clamp(16px, 4.6vw, 20px);
+        }
+        .wm-tagline {
+          font-size: clamp(9px, 2.6vw, 11px);
+          letter-spacing: 0.01em;
+        }
+
+        @keyframes wmFlicker {
+          0% {
+            transform: translateY(0px) scale(0.98);
+            opacity: 0.55;
+            filter: blur(1.2px);
+          }
+          35% {
+            transform: translateY(-1px) scale(1.06);
+            opacity: 0.78;
+            filter: blur(1.6px);
+          }
+          70% {
+            transform: translateY(0px) scale(1.01);
+            opacity: 0.62;
+            filter: blur(1.4px);
+          }
+          100% {
+            transform: translateY(-0.5px) scale(1.03);
+            opacity: 0.7;
+            filter: blur(1.5px);
+          }
+        }
+
+        .wm-flame {
+          background: radial-gradient(
+            circle at 50% 65%,
+            rgba(255, 210, 120, 0.75),
+            rgba(255, 140, 64, 0.45) 45%,
+            rgba(255, 80, 40, 0.12) 70%,
+            rgba(255, 80, 40, 0) 100%
+          );
+          animation: wmFlicker 1.05s infinite ease-in-out;
+          mix-blend-mode: screen;
+        }
+
+        .wm-flameCore {
+          background: radial-gradient(
+            circle at 50% 70%,
+            rgba(255, 255, 220, 0.65),
+            rgba(255, 190, 90, 0.32) 55%,
+            rgba(255, 190, 90, 0) 100%
+          );
+          animation: wmFlicker 0.86s infinite ease-in-out;
+          mix-blend-mode: screen;
+        }
+      `}</style>
     </main>
   );
 }
