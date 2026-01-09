@@ -1,53 +1,54 @@
-/* ============================= */
-/* FLAME-ONLY FLICKER ANIMATION */
-/* ============================= */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-.flame-flicker {
-  clip-path: inset(6% 34% 58% 34%);
-  transform-origin: 50% 20%;
-  animation: flameFlicker 1.3s infinite ease-in-out;
-  mix-blend-mode: screen;
-  filter:
-    drop-shadow(0 0 8px rgba(255, 160, 80, 0.35))
-    drop-shadow(0 0 16px rgba(255, 120, 40, 0.25));
+/* Keep Leaflet controls neat in dark UI */
+.leaflet-container {
+  background: #070716;
 }
 
+/* Hide the Leaflet attribution (optional; remove if you want it) */
+.leaflet-control-attribution {
+  display: none !important;
+}
+
+/* ===== Logo flame-only flicker =====
+   We render the logo twice:
+   - base image (static)
+   - flame overlay clipped to top region, flickering subtly
+*/
 @keyframes flameFlicker {
-  0% {
-    transform: translateY(0) scale(1) rotate(-1deg);
-    opacity: 0.95;
-  }
-  25% {
-    transform: translateY(-2px) scale(1.05) rotate(1deg);
-    opacity: 1;
-  }
-  50% {
-    transform: translateY(-1px) scale(0.98) rotate(-0.5deg);
-  }
-  75% {
-    transform: translateY(-3px) scale(1.06) rotate(1.2deg);
-  }
-  100% {
-    transform: translateY(0) scale(1) rotate(-1deg);
-    opacity: 0.95;
-  }
+  0%   { opacity: 0.85; transform: translateY(0px) scale(1); filter: blur(0px) brightness(1.05); }
+  20%  { opacity: 1;    transform: translateY(-0.5px) scale(1.01); filter: blur(0.2px) brightness(1.15); }
+  40%  { opacity: 0.8;  transform: translateY(0.2px) scale(0.995); filter: blur(0px) brightness(1.02); }
+  60%  { opacity: 1;    transform: translateY(-0.7px) scale(1.015); filter: blur(0.25px) brightness(1.18); }
+  80%  { opacity: 0.9;  transform: translateY(0.1px) scale(1.005); filter: blur(0.1px) brightness(1.08); }
+  100% { opacity: 0.85; transform: translateY(0px) scale(1); filter: blur(0px) brightness(1.05); }
 }
 
-/* ============================= */
-/* MAP DISTANCE ARC ANIMATION */
-/* ============================= */
-
-.route-comet {
-  stroke-dasharray: 12 22;
-  animation: routeDash 2.8s linear infinite;
-  stroke-linecap: round;
+.wml-flame {
+  animation: flameFlicker 1.25s infinite;
 }
 
-@keyframes routeDash {
-  from {
-    stroke-dashoffset: 0;
-  }
-  to {
-    stroke-dashoffset: -68;
-  }
+/* ===== Map line + distance arc animations (Leaflet SVG paths) ===== */
+@keyframes dashDraw {
+  from { stroke-dashoffset: 900; opacity: 0.65; }
+  to   { stroke-dashoffset: 0;   opacity: 1; }
+}
+
+.wml-journey-line {
+  stroke-dasharray: 900;
+  stroke-dashoffset: 900;
+  animation: dashDraw 1.6s ease-out forwards;
+}
+
+@keyframes pulseDash {
+  0%   { stroke-dashoffset: 0;   opacity: 0.35; }
+  50%  { stroke-dashoffset: 40;  opacity: 0.55; }
+  100% { stroke-dashoffset: 0;   opacity: 0.35; }
+}
+
+.wml-distance-arc {
+  stroke-dasharray: 10 10;
+  animation: pulseDash 1.8s ease-in-out infinite;
 }
