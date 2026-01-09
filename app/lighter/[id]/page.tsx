@@ -49,16 +49,20 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
           <div className="flex items-start gap-5">
             <LogoFlicker />
 
-            <div className="flex-1">
-              <h1 className="text-2xl font-semibold leading-tight">
+            <div className="min-w-0 flex-1">
+              {/* Title: reduced so it always fits */}
+              <h1 className="truncate text-[22px] font-semibold leading-tight tracking-wide">
                 Where’s My Lighter?
               </h1>
 
-              <p className="mt-1 text-[11px] text-white/45">
+              {/* Tagline: smaller, 1 line, non-caps */}
+              <p className="mt-1 truncate text-[10.5px] text-white/45">
                 Tracking this tiny flame across the globe
               </p>
 
-              <div className="mt-4 text-sm text-white/80">{label}</div>
+              <div className="mt-4 text-sm font-medium text-white/85">
+                {label}
+              </div>
 
               <div className="mt-1 text-xs text-white/50">
                 Last seen{" "}
@@ -77,7 +81,9 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
                 TOTAL TAPS
               </div>
 
-              <div className="mt-4 text-2xl font-semibold">{data?.unique_holders ?? 0}</div>
+              <div className="mt-4 text-2xl font-semibold">
+                {data?.unique_holders ?? 0}
+              </div>
               <div className="text-[10px] tracking-[0.25em] text-white/50">
                 OWNERS
               </div>
@@ -85,8 +91,13 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
           </div>
         </div>
 
-        <JourneyMap points={points} center={center} zoom={5} />
+        {/* Map */}
+        <JourneyMap points={points} center={center} zoom={5} distanceKm={distanceKm} />
+
+        {/* Owners log */}
         <OwnersLog lighterId={lighterId} />
+
+        {/* Actions */}
         <TapActions lighterId={lighterId} />
       </div>
     </main>
