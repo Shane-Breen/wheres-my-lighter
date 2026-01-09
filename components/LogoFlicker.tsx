@@ -1,31 +1,33 @@
 "use client";
 
-export default function LogoFlicker({
-  size = 168, // +50% size
-}: {
-  size?: number;
-}) {
+import Image from "next/image";
+
+export default function LogoFlicker() {
+  // Size: +50% vs earlier small icon.
+  // Want +100%? change w-16 h-16 -> w-20 h-20 (or w-24 h-24).
   return (
-    <div
-      className="relative"
-      style={{ width: size, height: size }}
-    >
+    <div className="relative h-16 w-16 shrink-0">
       {/* Base logo (static) */}
-      <img
+      <Image
         src="/logoo.png"
-        alt="Where's My Lighter"
-        className="absolute inset-0 h-full w-full"
-        draggable={false}
+        alt="Where's My Lighter logo"
+        fill
+        priority
+        className="object-contain drop-shadow-[0_0_18px_rgba(255,160,80,0.22)]"
       />
 
-      {/* Flame-only overlay */}
-      <img
-        src="/logoo.png"
-        alt=""
-        aria-hidden
-        className="absolute inset-0 h-full w-full flame-flicker"
-        draggable={false}
-      />
+      {/* Flame overlay (top portion only), flickers */}
+      <div className="pointer-events-none absolute inset-0 wml-flame">
+        <Image
+          src="/logoo.png"
+          alt=""
+          fill
+          className="object-contain drop-shadow-[0_0_22px_rgba(255,170,90,0.38)]"
+          style={{
+            clipPath: "inset(0% 0% 58% 0%)", // shows top ~42% (flame area)
+          }}
+        />
+      </div>
     </div>
   );
 }
