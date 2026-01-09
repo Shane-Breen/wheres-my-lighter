@@ -16,7 +16,6 @@ type JourneyMapProps = {
 
 function FixLeafletIcons() {
   useEffect(() => {
-    // Fix default marker icon paths in Next/Vercel builds
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const iconRetinaUrl = require("leaflet/dist/images/marker-icon-2x.png");
     // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -35,20 +34,60 @@ function FixLeafletIcons() {
   return null;
 }
 
-function FitToJourney({ points }: { points: LatLng[] }) {
+/**
+ * Privacy: snap coordinates to ~1km grid.
+ * 0.01° latitude ≈ 1.11km.
+ * 0.01° longitude varies by latitude (≈ 0.7km around Cork), still safely coarse.
+ */
+function snapTo1km(p: LatLng): LatLng {
+  const stepLat = 0.01;
+  const stepLng = 0.01;
+
+  const lat = Math.round(p.lat / stepLat) * stepLat;
+  const lng = Math.round(p.lng / stepLng) * stepLng;
+
+  // Keep reasonable decimals for clean output
+  return {
+    lat: Number(lat.toFixed(5)),
+    lng: Number(lng.toFixed(5)),
+  };
+}
+
+function FitToJourney({
+  points,
+  fallbackCenter,
+}: {
+  points: LatLng[];
+  fallbackCenter: LatLng;
+}) {
   const map = useMap();
 
   useEffect(() => {
-    if (!points || points.length === 0) return;
+    // Privacy: NEVER zoom in too close
+    const MAX_ZOOM_PRIVACY = 11; // lower = more zoomed out; 11 keeps it town-scale, not street-scale
+    const MIN_ZOOM_PRIVACY = 4;  // avoid weird world view if points are close
+
+    if (!points || points.length === 0) {
+      map.setView([fallbackCenter.lat, fallbackCenter.lng], 6, { animate: true });
+      return;
+    }
 
     if (points.length === 1) {
-      map.setView(points[0], Math.max(map.getZoom(), 6), { animate: true });
+      map.setView([points[0].lat, points[0].lng], 10, { animate: true });
+      if (map.getZoom() > MAX_ZOOM_PRIVACY) map.setZoom(MAX_ZOOM_PRIVACY);
+      if (map.getZoom() < MIN_ZOOM_PRIVACY) map.setZoom(MIN_ZOOM_PRIVACY);
       return;
     }
 
     const bounds = L.latLngBounds(points.map((p) => [p.lat, p.lng] as [number, number]));
-    map.fitBounds(bounds.pad(0.18), { animate: true });
-  }, [map, points]);
+
+    // Big padding = zoomed out = privacy-friendly
+    map.fitBounds(bounds.pad(0.65), { animate: true });
+
+    // Cap zoom so it never gets too close
+    if (map.getZoom() > MAX_ZOOM_PRIVACY) map.setZoom(MAX_ZOOM_PRIVACY);
+    if (map.getZoom() < MIN_ZOOM_PRIVACY) map.setZoom(MIN_ZOOM_PRIVACY);
+  }, [map, points, fallbackCenter]);
 
   return null;
 }
@@ -63,17 +102,14 @@ function arcBetween(a: LatLng, b: LatLng, steps = 40, curvature = 0.18): LatLng[
   const mx = (lng1 + lng2) / 2;
   const my = (lat1 + lat2) / 2;
 
-  // perpendicular offset in "lat/lng space" (approx)
   const dx = lng2 - lng1;
   const dy = lat2 - lat1;
 
   const len = Math.sqrt(dx * dx + dy * dy) || 1;
 
-  // perpendicular unit vector
   const px = -dy / len;
   const py = dx / len;
 
-  // offset magnitude scales with distance
   const mag = Math.min(6, len * 0.55) * curvature;
 
   const cx = mx + px * mag;
@@ -82,7 +118,6 @@ function arcBetween(a: LatLng, b: LatLng, steps = 40, curvature = 0.18): LatLng[
   const pts: LatLng[] = [];
   for (let i = 0; i <= steps; i++) {
     const t = i / steps;
-    // Quadratic Bezier interpolation
     const lng = (1 - t) * (1 - t) * lng1 + 2 * (1 - t) * t * cx + t * t * lng2;
     const lat = (1 - t) * (1 - t) * lat1 + 2 * (1 - t) * t * cy + t * t * lat2;
     pts.push({ lat, lng });
@@ -93,20 +128,28 @@ function arcBetween(a: LatLng, b: LatLng, steps = 40, curvature = 0.18): LatLng[
 export default function JourneyMap({ points, center, zoom = 5 }: JourneyMapProps) {
   const mapKeyRef = useRef(0);
 
+  // Privacy: snap ALL displayed points to ~1km grid
+  const safePoints = useMemo(() => {
+    if (!points || points.length === 0) return [];
+    return points.map(snapTo1km);
+  }, [points]);
+
+  const safeCenter = useMemo(() => snapTo1km(center), [center]);
+
   const arcPath = useMemo(() => {
-    if (!points || points.length < 2) return [];
+    if (!safePoints || safePoints.length < 2) return [];
     const combined: LatLng[] = [];
 
-    for (let i = 0; i < points.length - 1; i++) {
-      const a = points[i];
-      const b = points[i + 1];
+    for (let i = 0; i < safePoints.length - 1; i++) {
+      const a = safePoints[i];
+      const b = safePoints[i + 1];
       const seg = arcBetween(a, b, 44, 0.18);
 
-      if (i > 0) seg.shift(); // avoid duplicating the join point
+      if (i > 0) seg.shift();
       combined.push(...seg);
     }
     return combined;
-  }, [points]);
+  }, [safePoints]);
 
   // Animate the SVG stroke dash on the Leaflet polyline path
   useEffect(() => {
@@ -121,10 +164,7 @@ export default function JourneyMap({ points, center, zoom = 5 }: JourneyMapProps
         const total = path.getTotalLength();
         path.style.strokeDasharray = `${total}`;
         path.style.strokeDashoffset = `${total}`;
-        // trigger layout
-        // eslint-disable-next-line @typescript-eslint/no-unused-expressions
         path.getBoundingClientRect();
-
         path.classList.add("journey-arc-animate");
       } catch {
         // fail silently
@@ -132,27 +172,28 @@ export default function JourneyMap({ points, center, zoom = 5 }: JourneyMapProps
     }, 150);
 
     return () => window.clearTimeout(t);
-  }, [arcPath.length, points?.length]);
+  }, [arcPath.length, safePoints?.length]);
 
-  const last = points && points.length > 0 ? points[points.length - 1] : center;
+  const last = safePoints && safePoints.length > 0 ? safePoints[safePoints.length - 1] : safeCenter;
 
   return (
     <div className="overflow-hidden rounded-3xl border border-white/10 bg-white/5 shadow-[0_0_50px_rgba(140,90,255,0.06)]">
       <div className="h-[320px] w-full">
         <MapContainer
           key={mapKeyRef.current}
-          center={[center.lat, center.lng]}
+          center={[safeCenter.lat, safeCenter.lng]}
           zoom={zoom}
           scrollWheelZoom={false}
           className="h-full w-full"
           preferCanvas={false}
         >
           <FixLeafletIcons />
-          <FitToJourney points={points} />
+          <FitToJourney points={safePoints} fallbackCenter={safeCenter} />
 
+          {/* Dark map tiles (CartoDB Dark Matter) */}
           <TileLayer
-            attribution='&copy; OpenStreetMap contributors'
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            attribution='&copy; OpenStreetMap contributors &copy; CARTO'
+            url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
           />
 
           {/* Arc path */}
@@ -167,7 +208,7 @@ export default function JourneyMap({ points, center, zoom = 5 }: JourneyMapProps
             />
           )}
 
-          {/* Soft “glow” under arc for depth */}
+          {/* Soft glow under arc */}
           {arcPath.length >= 2 && (
             <Polyline
               positions={arcPath.map((p) => [p.lat, p.lng] as [number, number])}
@@ -179,7 +220,7 @@ export default function JourneyMap({ points, center, zoom = 5 }: JourneyMapProps
             />
           )}
 
-          {/* Last seen marker */}
+          {/* Last seen marker (also snapped) */}
           <CircleMarker
             center={[last.lat, last.lng]}
             radius={7}
@@ -192,7 +233,6 @@ export default function JourneyMap({ points, center, zoom = 5 }: JourneyMapProps
         </MapContainer>
       </div>
 
-      {/* Plain <style> tag (NOT styled-jsx) */}
       <style>{`
         .journey-arc {
           stroke: rgba(200, 160, 255, 0.95);
@@ -211,8 +251,14 @@ export default function JourneyMap({ points, center, zoom = 5 }: JourneyMapProps
           stroke-dashoffset: 0 !important;
         }
 
+        /* Keep controls readable on dark tiles */
         .leaflet-container {
           background: #070716;
+        }
+        .leaflet-control-zoom a {
+          background: rgba(0,0,0,0.45) !important;
+          color: rgba(255,255,255,0.9) !important;
+          border: 1px solid rgba(255,255,255,0.12) !important;
         }
         .leaflet-control-attribution {
           background: rgba(0, 0, 0, 0.35) !important;
