@@ -27,9 +27,37 @@ export default async function Page({ params }: PageProps) {
   const data = await getLighterData(lighterId);
 
   const latest = data?.latest_tap;
-  const city = latest?.city || "Unknown";
+
+  // Prefer "town/locality" style fields if present, then fall back gracefully.
+  const town =
+    latest?.town ||
+    latest?.locality ||
+    latest?.village ||
+    latest?.hamlet ||
+    latest?.neighbourhood ||
+    latest?.city ||
+    "";
+
+  const county = latest?.county || latest?.region || "";
   const country = latest?.country || "";
-  const label = country ? `${city}, ${country}` : `${city}`;
+
+  // Build a human label, but keep it general if only county is available.
+  // (Town is best; if town missing, fall back to county; then country.)
+  const primary =
+    (typeof town === "string" && town.trim()) ||
+    (typeof county === "string" && county.trim()) ||
+    "Unknown";
+
+  const secondary =
+    (primary !== county && typeof county === "string" && county.trim() && county.trim() !== primary
+      ? county.trim()
+      : "") || "";
+
+  const tail =
+    (typeof country === "string" && country.trim() ? country.trim() : "") || "";
+
+  const labelParts = [primary, secondary, tail].filter(Boolean);
+  const label = labelParts.join(", ");
 
   const journey = Array.isArray(data?.journey) ? data.journey : [];
   const points = journey
@@ -58,20 +86,16 @@ export default async function Page({ params }: PageProps) {
 
               {/* Flame-only flicker (overlay, not the whole lighter) */}
               <div className="pointer-events-none absolute left-1/2 top-[6px] h-6 w-6 -translate-x-1/2">
-                {/* glow */}
                 <div className="absolute inset-0 rounded-full bg-[radial-gradient(circle_at_50%_65%,rgba(255,210,120,0.70),rgba(255,140,64,0.40)_45%,rgba(255,80,40,0.12)_70%,rgba(255,80,40,0)_100%)] opacity-70 blur-[1px] mix-blend-screen animate-pulse" />
-                {/* flicker ring */}
                 <div className="absolute inset-[2px] rounded-full bg-[radial-gradient(circle_at_50%_70%,rgba(255,255,220,0.55),rgba(255,190,90,0.25)_55%,rgba(255,190,90,0)_100%)] opacity-70 blur-[1.5px] mix-blend-screen animate-ping" />
               </div>
             </div>
 
             <div className="min-w-0 flex-1">
-              {/* MUST fit on ONE line (no truncation): clamp size + nowrap */}
               <h1 className="whitespace-nowrap font-semibold leading-tight tracking-tight text-[clamp(16px,4.6vw,20px)]">
                 Where’s My Lighter?
               </h1>
 
-              {/* subtle, smaller, one line */}
               <p className="mt-0.5 whitespace-nowrap leading-tight text-white/40 text-[clamp(9px,2.6vw,11px)]">
                 Tracking this tiny flame across the globe
               </p>
