@@ -3,35 +3,56 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-async function reverseGeocode(lat: number, lng: number) {
+function snapTo1km(lat: number, lng: number) {
+  // ~1.11km per 0.01° latitude; longitude varies but still coarse enough for privacy.
+  const step = 0.01;
+  const snappedLat = Math.round(lat / step) * step;
+  const snappedLng = Math.round(lng / step) * step;
+  return {
+    lat: Number(snappedLat.toFixed(5)),
+    lng: Number(snappedLng.toFixed(5)),
+  };
+}
+
+async function reverseGeocodeTownOnly(lat: number, lng: number) {
   try {
+    // Privacy: geocode snapped coords (not precise GPS)
+    const snapped = snapTo1km(lat, lng);
+
     const url =
       `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(
-        lat
-      )}&lon=${encodeURIComponent(lng)}&zoom=10&addressdetails=1`;
+        snapped.lat
+      )}&lon=${encodeURIComponent(snapped.lng)}&zoom=10&addressdetails=1`;
 
     const res = await fetch(url, {
       headers: {
-        // Nominatim prefers having a UA; browser may ignore this, but harmless
-        "Accept": "application/json",
+        Accept: "application/json",
       },
     });
 
     if (!res.ok) return { city: null, country: null };
+
     const data: any = await res.json();
     const addr = data?.address || {};
 
+    // ✅ Town only (never county)
     const city =
-      addr.city ||
       addr.town ||
+      addr.city ||
       addr.village ||
       addr.hamlet ||
-      addr.county ||
+      addr.locality ||
       null;
 
     const country = addr.country || null;
 
-    return { city, country };
+    // Extra guard: if something slips through as "County X", drop it.
+    const safeCity =
+      typeof city === "string" && city.toLowerCase().startsWith("county ")
+        ? null
+        : city;
+
+    return { city: safeCity, country };
   } catch {
     return { city: null, country: null };
   }
@@ -61,11 +82,13 @@ export default function TapActions({ lighterId }: { lighterId: string }) {
         });
       });
 
+      // Precise GPS (stored securely server-side)
       const lat = position.coords.latitude;
       const lng = position.coords.longitude;
       const accuracy_m = Math.round(position.coords.accuracy || 0);
 
-      const { city, country } = await reverseGeocode(lat, lng);
+      // Public label derived from snapped coords (privacy)
+      const { city, country } = await reverseGeocodeTownOnly(lat, lng);
 
       const res = await fetch(`/api/lighter/${encodeURIComponent(lighterId)}/tap`, {
         method: "POST",
@@ -75,7 +98,7 @@ export default function TapActions({ lighterId }: { lighterId: string }) {
           lat,
           lng,
           accuracy_m,
-          city,
+          city,    // ✅ now never "County Cork"
           country,
         }),
       });
@@ -86,7 +109,7 @@ export default function TapActions({ lighterId }: { lighterId: string }) {
       }
 
       setMsg("Tap logged ✨");
-      router.refresh(); // refresh server data on the page
+      router.refresh();
     } catch (e: any) {
       const err =
         e?.message?.includes("denied")
@@ -99,7 +122,6 @@ export default function TapActions({ lighterId }: { lighterId: string }) {
   }
 
   function createProfile() {
-    // you already have /profile route in repo
     window.location.href = "/profile";
   }
 
@@ -123,7 +145,7 @@ export default function TapActions({ lighterId }: { lighterId: string }) {
 
       <p className="text-xs leading-relaxed text-white/50">
         We request location permission to log a sighting. Precise GPS is stored securely.
-        Only the nearest town is displayed publicly.
+        Only the nearest town is displayed publicly (approx. 1km).
       </p>
 
       {msg ? (
