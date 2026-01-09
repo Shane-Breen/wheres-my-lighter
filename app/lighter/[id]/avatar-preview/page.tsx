@@ -1,5 +1,6 @@
 import { headers } from "next/headers";
 import { generateAvatarDebug } from "@/lib/avatarEngine";
+import AvatarSprite from "@/components/AvatarSprite";
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -37,23 +38,18 @@ export default async function AvatarPreviewPage({ params }: PageProps) {
   const journey = Array.isArray(data?.journey) ? data.journey : [];
   const totalTaps = journey.length;
 
-  const countries = Array.from(
-    new Set(
-      journey
-        .map((p: any) => p?.country)
-        .filter((c: any) => typeof c === "string" && c.trim().length > 0)
-        .map((c: string) => c.trim())
-    )
-  );
+  const countries = journey
+    .map((p: any) => p?.country)
+    .filter((c: any) => typeof c === "string" && c.trim().length > 0)
+    .map((c: string) => c.trim());
 
-  const cities = Array.from(
-    new Set(
-      journey
-        .map((p: any) => p?.city)
-        .filter((c: any) => typeof c === "string" && c.trim().length > 0)
-        .map((c: string) => c.trim())
-    )
-  );
+  const cities = journey
+    .map((p: any) => p?.city)
+    .filter((c: any) => typeof c === "string" && c.trim().length > 0)
+    .map((c: string) => c.trim());
+
+  const uniqCountries = Array.from(new Set(countries));
+  const uniqCities = Array.from(new Set(cities));
 
   const nightTaps = journey.filter((p: any) => {
     const hour = safeHour(p?.tapped_at);
@@ -64,9 +60,10 @@ export default async function AvatarPreviewPage({ params }: PageProps) {
   const nightRatio = totalTaps > 0 ? nightTaps / totalTaps : 0;
 
   const avatar = generateAvatarDebug({
+    lighterId,
     nightRatio,
-    countriesCount: countries.length,
-    citiesCount: cities.length,
+    countries: uniqCountries,
+    cities: uniqCities,
     totalTaps,
   });
 
@@ -95,31 +92,30 @@ export default async function AvatarPreviewPage({ params }: PageProps) {
 
             <div className="flex items-center justify-between">
               <span className="text-white/60">Countries seen</span>
-              <span className="font-semibold">{countries.length}</span>
+              <span className="font-semibold">{uniqCountries.length}</span>
             </div>
 
             <div className="flex items-center justify-between">
               <span className="text-white/60">Cities seen</span>
-              <span className="font-semibold">{cities.length}</span>
+              <span className="font-semibold">{uniqCities.length}</span>
             </div>
 
             <div className="flex items-center justify-between">
               <span className="text-white/60">Night taps</span>
               <span className="font-semibold">
-                {nightTaps}{" "}
-                <span className="text-white/40">({nightRatio.toFixed(2)})</span>
+                {nightTaps} <span className="text-white/40">({nightRatio.toFixed(2)})</span>
               </span>
             </div>
 
             <div className="pt-2">
               <div className="text-xs text-white/40">Countries</div>
               <div className="mt-1 text-xs text-white/70 break-words">
-                {countries.join(", ") || "—"}
+                {uniqCountries.join(", ") || "—"}
               </div>
 
               <div className="mt-3 text-xs text-white/40">Cities</div>
               <div className="mt-1 text-xs text-white/70 break-words">
-                {cities.join(", ") || "—"}
+                {uniqCities.join(", ") || "—"}
               </div>
             </div>
           </div>
@@ -128,9 +124,8 @@ export default async function AvatarPreviewPage({ params }: PageProps) {
         {/* Avatar output */}
         <div className="rounded-3xl border border-purple-500/30 bg-purple-500/10 p-5 shadow-[0_0_60px_rgba(180,120,255,0.10)]">
           <div className="flex items-start gap-4">
-            {/* Placeholder “sprite” block for now */}
-            <div className="h-16 w-16 shrink-0 rounded-2xl bg-black/30 border border-white/10 grid place-items-center">
-              <div className="text-2xl">🫠</div>
+            <div className="shrink-0">
+              <AvatarSprite seed={avatar.seed} size={72} mood={avatar.mood} />
             </div>
 
             <div className="min-w-0 flex-1">
@@ -144,7 +139,10 @@ export default async function AvatarPreviewPage({ params }: PageProps) {
               </div>
 
               <div className="mt-4 text-xs text-white/40">
-                (Debug) Ruleset: {avatar.debug_rule}
+                (Debug) Rule: {avatar.debug_rule}
+              </div>
+              <div className="mt-1 text-xs text-white/40">
+                (Debug) Seed: {avatar.seed}
               </div>
             </div>
           </div>
