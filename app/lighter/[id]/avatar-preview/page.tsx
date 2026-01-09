@@ -1,6 +1,6 @@
 import { headers } from "next/headers";
-import { generateAvatarDebug } from "@/lib/avatarEngine";
 import AvatarSprite from "@/components/AvatarSprite";
+import { generateAvatarDebug } from "@/lib/avatarEngine";
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -67,8 +67,6 @@ export default async function AvatarPreviewPage({ params }: PageProps) {
     totalTaps,
   });
 
-  const latest = data?.latest_tap;
-
   return (
     <main className="min-h-screen bg-[#070716] text-white">
       <div className="mx-auto w-full max-w-md px-4 py-10 space-y-5">
@@ -80,7 +78,6 @@ export default async function AvatarPreviewPage({ params }: PageProps) {
           </div>
         </div>
 
-        {/* Debug stats */}
         <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
           <div className="text-[12px] tracking-[0.25em] text-white/50">JOURNEY SIGNALS</div>
 
@@ -121,7 +118,6 @@ export default async function AvatarPreviewPage({ params }: PageProps) {
           </div>
         </div>
 
-        {/* Avatar output */}
         <div className="rounded-3xl border border-purple-500/30 bg-purple-500/10 p-5 shadow-[0_0_60px_rgba(180,120,255,0.10)]">
           <div className="flex items-start gap-4">
             <div className="shrink-0">
@@ -146,14 +142,6 @@ export default async function AvatarPreviewPage({ params }: PageProps) {
               </div>
             </div>
           </div>
-        </div>
-
-        {/* Latest tap JSON for reference */}
-        <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
-          <div className="text-[12px] tracking-[0.25em] text-white/50">LATEST TAP (RAW)</div>
-          <pre className="mt-3 text-xs bg-black/40 p-4 rounded-2xl overflow-x-auto">
-            {JSON.stringify(latest, null, 2)}
-          </pre>
         </div>
       </div>
     </main>
