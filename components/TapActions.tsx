@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 function snapWithin1km(lat: number, lng: number) {
-  // 0.005° lat ≈ 0.55km. Even diagonally, error stays under ~1km.
+  // 0.005° lat ≈ 0.55km. Safely within your “within 1km” promise.
   const step = 0.005;
   const snappedLat = Math.round(lat / step) * step;
   const snappedLng = Math.round(lng / step) * step;
@@ -14,10 +14,11 @@ function snapWithin1km(lat: number, lng: number) {
   };
 }
 
-async function reverseGeocodeTownOnly(lat: number, lng: number) {
+async function reverseGeocodeCoarse(lat: number, lng: number) {
   try {
     const snapped = snapWithin1km(lat, lng);
 
+    // zoom=12 tends to give town-level results without drifting into street-level
     const url =
       `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(
         snapped.lat
@@ -25,15 +26,16 @@ async function reverseGeocodeTownOnly(lat: number, lng: number) {
 
     const res = await fetch(url, {
       headers: { Accept: "application/json" },
+      cache: "no-store",
     });
 
-    if (!res.ok) return { city: null, country: null };
+    if (!res.ok) return { city: null as string | null, country: null as string | null };
 
     const data: any = await res.json();
     const addr = data?.address || {};
 
-    // ✅ Town-first. Never county.
-    const city =
+    // Prefer: town-ish → then county → then country
+    const townish =
       addr.town ||
       addr.village ||
       addr.hamlet ||
@@ -42,18 +44,36 @@ async function reverseGeocodeTownOnly(lat: number, lng: number) {
       addr.suburb ||
       null;
 
+    const county = addr.county || addr.state || addr.region || null;
     const country = addr.country || null;
 
-    // Guard: never allow "County X" to be stored as city
-    const safeCity =
-      typeof city === "string" && city.toLowerCase().startsWith("county ")
+    // If townish is actually "County X", ignore it (we'll use county instead)
+    const safeTownish =
+      typeof townish === "string" && townish.toLowerCase().startsWith("county ")
         ? null
-        : city;
+        : townish;
 
-    return { city: safeCity, country };
+    const city = safeTownish || county || null;
+
+    return { city, country };
   } catch {
     return { city: null, country: null };
   }
+}
+
+function geolocationErrorToMessage(err: any) {
+  // Standard GeolocationPositionError codes:
+  // 1 = PERMISSION_DENIED, 2 = POSITION_UNAVAILABLE, 3 = TIMEOUT
+  const code = err?.code;
+
+  if (code === 1) return "Location permission denied. Please allow location access for this site.";
+  if (code === 2)
+    return "Position update is unavailable. Check that Location Services are enabled and you’re on HTTPS (not an IP/localhost on some devices).";
+  if (code === 3) return "Location request timed out. Try again or move to an area with better signal.";
+
+  // Fallback
+  const msg = typeof err?.message === "string" ? err.message : "";
+  return msg ? `Location error: ${msg}` : "Location failed.";
 }
 
 export default function TapActions({ lighterId }: { lighterId: string }) {
@@ -80,13 +100,13 @@ export default function TapActions({ lighterId }: { lighterId: string }) {
         });
       });
 
-      // Precise GPS (stored server-side)
+      // Precise GPS (stored securely server-side)
       const lat = position.coords.latitude;
       const lng = position.coords.longitude;
       const accuracy_m = Math.round(position.coords.accuracy || 0);
 
-      // Public label derived from snapped coords (privacy)
-      const { city, country } = await reverseGeocodeTownOnly(lat, lng);
+      // Privacy-safe location label (snapped within ~1km)
+      const { city, country } = await reverseGeocodeCoarse(lat, lng);
 
       const res = await fetch(`/api/lighter/${encodeURIComponent(lighterId)}/tap`, {
         method: "POST",
@@ -96,6 +116,7 @@ export default function TapActions({ lighterId }: { lighterId: string }) {
           lat,
           lng,
           accuracy_m,
+          // Save best available: town → county → null (UI can show country)
           city,
           country,
         }),
@@ -109,11 +130,13 @@ export default function TapActions({ lighterId }: { lighterId: string }) {
       setMsg("Tap logged ✨");
       router.refresh();
     } catch (e: any) {
-      const err =
-        e?.message?.includes("denied")
-          ? "Location permission denied."
-          : e?.message || "Tap failed.";
-      setMsg(err);
+      // If it’s a geolocation error object, show the real cause
+      if (typeof e?.code === "number") {
+        setMsg(geolocationErrorToMessage(e));
+      } else {
+        const err = e?.message || "Tap failed.";
+        setMsg(err);
+      }
     } finally {
       setBusy(false);
     }
@@ -142,7 +165,8 @@ export default function TapActions({ lighterId }: { lighterId: string }) {
       </button>
 
       <p className="text-xs leading-relaxed text-white/50">
-        Precise GPS is stored securely. Public location is approximate (≤1km) and shows the nearest town when possible.
+        Precise GPS is stored securely. Public location uses an approximate area (≤1km) and shows
+        town when possible, otherwise county.
       </p>
 
       {msg ? (
