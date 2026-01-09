@@ -64,7 +64,6 @@ export default async function AvatarPreviewPage({ params }: PageProps) {
   const journey: any[] = Array.isArray(data?.journey) ? data.journey : [];
   const totalTaps = journey.length;
 
-  // IMPORTANT FIX: lat/lng may arrive as strings from Supabase REST
   const points = journey
     .map((p) => {
       const lat = toNumber(p?.lat);
@@ -75,7 +74,7 @@ export default async function AvatarPreviewPage({ params }: PageProps) {
     .filter(Boolean) as { lat: number; lng: number }[];
 
   const center =
-    points.length > 0 ? points[points.length - 1] : { lat: 34.0522, lng: -118.2437 }; // default LA
+    points.length > 0 ? points[points.length - 1] : { lat: 34.0522, lng: -118.2437 };
 
   const countriesRaw: string[] = journey
     .map((p) => p?.country)
@@ -111,6 +110,20 @@ export default async function AvatarPreviewPage({ params }: PageProps) {
 
   const birthLabel = labelFrom(birth?.city, normalizeCountry(String(birth?.country || "")));
   const latestLabel = labelFrom(latest?.city, normalizeCountry(String(latest?.country || "")));
+
+  // NEW: owners + distance
+  const ownersSet = new Set<string>();
+  for (const p of journey) {
+    if (p?.visitor_id !== null && p?.visitor_id !== undefined && String(p.visitor_id).trim().length) {
+      ownersSet.add(String(p.visitor_id));
+    }
+  }
+  const numberOfOwners = ownersSet.size;
+
+  const distanceKm =
+    typeof data?.distance_km === "number"
+      ? data.distance_km
+      : toNumber(data?.distance_km) ?? 0;
 
   return (
     <main className="min-h-screen bg-[#070716] text-white">
@@ -160,10 +173,23 @@ export default async function AvatarPreviewPage({ params }: PageProps) {
 
         <AvatarJourneyMap points={points} center={center} zoom={4} />
 
+        {/* UPDATED: Journey Signals */}
         <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
           <div className="text-[12px] tracking-[0.25em] text-white/50">JOURNEY SIGNALS</div>
 
           <div className="mt-3 space-y-2 text-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-white/60">Number of owners</span>
+              <span className="font-semibold">{numberOfOwners}</span>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <span className="text-white/60">Total distance travelled (km)</span>
+              <span className="font-semibold">
+                {typeof distanceKm === "number" ? distanceKm.toFixed(1) : "0.0"}
+              </span>
+            </div>
+
             <div className="flex items-center justify-between">
               <span className="text-white/60">Total taps</span>
               <span className="font-semibold">{totalTaps}</span>
@@ -177,13 +203,6 @@ export default async function AvatarPreviewPage({ params }: PageProps) {
             <div className="flex items-center justify-between">
               <span className="text-white/60">Cities visited</span>
               <span className="font-semibold">{uniqCities.length}</span>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <span className="text-white/60">Night taps</span>
-              <span className="font-semibold">
-                {nightTaps} <span className="text-white/40">({nightRatio.toFixed(2)})</span>
-              </span>
             </div>
 
             <div className="pt-2">
