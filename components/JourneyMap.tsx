@@ -17,7 +17,6 @@ type JourneyMapProps = {
 function FixLeafletIcons() {
   useEffect(() => {
     // Fix default marker icon paths in Next/Vercel builds
-    // (prevents broken marker images / console noise)
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const iconRetinaUrl = require("leaflet/dist/images/marker-icon-2x.png");
     // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -41,6 +40,7 @@ function FitToJourney({ points }: { points: LatLng[] }) {
 
   useEffect(() => {
     if (!points || points.length === 0) return;
+
     if (points.length === 1) {
       map.setView(points[0], Math.max(map.getZoom(), 6), { animate: true });
       return;
@@ -67,7 +67,6 @@ function arcBetween(a: LatLng, b: LatLng, steps = 40, curvature = 0.18): LatLng[
   const dx = lng2 - lng1;
   const dy = lat2 - lat1;
 
-  // avoid zero-length
   const len = Math.sqrt(dx * dx + dy * dy) || 1;
 
   // perpendicular unit vector
@@ -103,8 +102,7 @@ export default function JourneyMap({ points, center, zoom = 5 }: JourneyMapProps
       const b = points[i + 1];
       const seg = arcBetween(a, b, 44, 0.18);
 
-      // avoid duplicating the join point
-      if (i > 0) seg.shift();
+      if (i > 0) seg.shift(); // avoid duplicating the join point
       combined.push(...seg);
     }
     return combined;
@@ -129,7 +127,7 @@ export default function JourneyMap({ points, center, zoom = 5 }: JourneyMapProps
 
         path.classList.add("journey-arc-animate");
       } catch {
-        // If Leaflet rendered as something unexpected, fail silently (no white screens)
+        // fail silently
       }
     }, 150);
 
@@ -194,9 +192,8 @@ export default function JourneyMap({ points, center, zoom = 5 }: JourneyMapProps
         </MapContainer>
       </div>
 
-      {/* Arc animation + styling (kept local; no refactor to global CSS) */}
-      <style jsx global>{`
-        /* Stroke color via CSS so we don't hardcode colors in JS */
+      {/* Plain <style> tag (NOT styled-jsx) */}
+      <style>{`
         .journey-arc {
           stroke: rgba(200, 160, 255, 0.95);
           stroke-linecap: round;
@@ -214,7 +211,6 @@ export default function JourneyMap({ points, center, zoom = 5 }: JourneyMapProps
           stroke-dashoffset: 0 !important;
         }
 
-        /* Prevent bright default Leaflet backgrounds in dark UI */
         .leaflet-container {
           background: #070716;
         }
