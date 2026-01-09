@@ -1,5 +1,6 @@
 import { headers } from "next/headers";
 import AvatarSprite from "@/components/AvatarSprite";
+import AvatarJourneyMap from "@/components/AvatarJourneyMap";
 import { generateAvatarDebug } from "@/lib/avatarEngine";
 
 type PageProps = {
@@ -31,6 +32,14 @@ function safeHour(ts: any): number | null {
   }
 }
 
+function normalizeCountry(s: string) {
+  const t = s.trim();
+  // keep it simple: unify common Ireland variants
+  if (/^éire/i.test(t)) return "Ireland";
+  if (/ireland/i.test(t)) return "Ireland";
+  return t;
+}
+
 export default async function AvatarPreviewPage({ params }: PageProps) {
   const { id: lighterId } = await params;
   const data = await getLighterData(lighterId);
@@ -38,17 +47,23 @@ export default async function AvatarPreviewPage({ params }: PageProps) {
   const journey: any[] = Array.isArray(data?.journey) ? data.journey : [];
   const totalTaps = journey.length;
 
+  const points = journey
+    .filter((p) => typeof p?.lat === "number" && typeof p?.lng === "number")
+    .map((p) => ({ lat: p.lat as number, lng: p.lng as number }));
+
+  const center =
+    points.length > 0 ? points[points.length - 1] : { lat: 51.7, lng: -8.5 };
+
   const countriesRaw: string[] = journey
     .map((p) => p?.country)
     .filter((c) => typeof c === "string" && c.trim().length > 0)
-    .map((c) => String(c).trim());
+    .map((c) => normalizeCountry(String(c)));
 
   const citiesRaw: string[] = journey
     .map((p) => p?.city)
     .filter((c) => typeof c === "string" && c.trim().length > 0)
     .map((c) => String(c).trim());
 
-  // Force string[] typing to avoid Set<unknown> inference in strict builds
   const uniqCountries: string[] = Array.from(new Set<string>(countriesRaw));
   const uniqCities: string[] = Array.from(new Set<string>(citiesRaw));
 
@@ -75,10 +90,36 @@ export default async function AvatarPreviewPage({ params }: PageProps) {
           <div className="text-[12px] tracking-[0.25em] text-white/50">AVATAR PREVIEW</div>
           <div className="mt-2 text-xl font-semibold">Debug • {lighterId}</div>
           <div className="mt-1 text-xs text-white/40">
-            This page is isolated and does not affect the main UI.
+            Map is dark + zoom-limited for privacy (max zoom 5).
           </div>
         </div>
 
+        {/* Avatar output */}
+        <div className="rounded-3xl border border-purple-500/30 bg-purple-500/10 p-5 shadow-[0_0_60px_rgba(180,120,255,0.10)]">
+          <div className="flex items-start gap-4">
+            <div className="shrink-0">
+              <AvatarSprite seed={avatar.seed} size={72} mood={avatar.mood} />
+            </div>
+
+            <div className="min-w-0 flex-1">
+              <div className="text-[12px] tracking-[0.25em] text-white/50">HATCHED OUTPUT</div>
+              <div className="mt-2 text-lg font-semibold">{avatar.name}</div>
+
+              <div className="mt-3 space-y-1 text-sm text-white/85">
+                {avatar.story.map((line, i) => (
+                  <div key={i}>{line}</div>
+                ))}
+              </div>
+
+              <div className="mt-4 text-xs text-white/40">(Debug) Rule: {avatar.debug_rule}</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Map */}
+        <AvatarJourneyMap points={points} center={center} zoom={4} />
+
+        {/* Journey signals */}
         <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
           <div className="text-[12px] tracking-[0.25em] text-white/50">JOURNEY SIGNALS</div>
 
@@ -89,12 +130,12 @@ export default async function AvatarPreviewPage({ params }: PageProps) {
             </div>
 
             <div className="flex items-center justify-between">
-              <span className="text-white/60">Countries seen</span>
+              <span className="text-white/60">Countries visited</span>
               <span className="font-semibold">{uniqCountries.length}</span>
             </div>
 
             <div className="flex items-center justify-between">
-              <span className="text-white/60">Cities seen</span>
+              <span className="text-white/60">Cities visited</span>
               <span className="font-semibold">{uniqCities.length}</span>
             </div>
 
@@ -115,28 +156,6 @@ export default async function AvatarPreviewPage({ params }: PageProps) {
               <div className="mt-1 text-xs text-white/70 break-words">
                 {uniqCities.join(", ") || "—"}
               </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-3xl border border-purple-500/30 bg-purple-500/10 p-5 shadow-[0_0_60px_rgba(180,120,255,0.10)]">
-          <div className="flex items-start gap-4">
-            <div className="shrink-0">
-              <AvatarSprite seed={avatar.seed} size={72} mood={avatar.mood} />
-            </div>
-
-            <div className="min-w-0 flex-1">
-              <div className="text-[12px] tracking-[0.25em] text-white/50">HATCHED OUTPUT</div>
-              <div className="mt-2 text-lg font-semibold">{avatar.name}</div>
-
-              <div className="mt-3 space-y-1 text-sm text-white/85">
-                {avatar.story.map((line, i) => (
-                  <div key={i}>{line}</div>
-                ))}
-              </div>
-
-              <div className="mt-4 text-xs text-white/40">(Debug) Rule: {avatar.debug_rule}</div>
-              <div className="mt-1 text-xs text-white/40">(Debug) Seed: {avatar.seed}</div>
             </div>
           </div>
         </div>
