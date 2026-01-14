@@ -22,10 +22,7 @@ export default function FollowShareDrawer({ lighterId }: { lighterId: string }) 
         method: "POST",
         headers: { "Content-Type": "application/json" },
         cache: "no-store",
-        body: JSON.stringify({
-          lighter_id: lighterId,
-          email,
-        }),
+        body: JSON.stringify({ lighter_id: lighterId, email }),
       });
 
       const data = await res.json().catch(() => ({}));
@@ -64,12 +61,12 @@ export default function FollowShareDrawer({ lighterId }: { lighterId: string }) 
   }
 
   return (
-    <section className="rounded-3xl border border-white/10 bg-white/5 p-5 shadow-[0_0_50px_rgba(140,90,255,0.10)]">
-      {/* Purple button (matches Tap vibe) */}
+    <section className="rounded-3xl border border-white/10 bg-white/5 shadow-[0_0_50px_rgba(140,90,255,0.10)] overflow-hidden">
+      {/* Full-width purple button header */}
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="w-full rounded-2xl bg-[#2a1546] px-4 py-4 text-base text-white/90 shadow-[0_10px_40px_rgba(110,50,200,0.25)]"
+        className="w-full rounded-none border-0 bg-purple-500/20 px-5 py-5 text-base text-white/90 hover:bg-purple-500/25"
       >
         <div className="flex items-center justify-between">
           <span className="font-medium">Follow &amp; Share</span>
@@ -78,7 +75,7 @@ export default function FollowShareDrawer({ lighterId }: { lighterId: string }) 
       </button>
 
       {open && (
-        <div className="mt-4 space-y-3">
+        <div className="p-5 space-y-3">
           <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
             <div className="text-xs tracking-[0.25em] text-white/60">FOLLOW THIS LIGHTER</div>
 
@@ -101,6 +98,7 @@ export default function FollowShareDrawer({ lighterId }: { lighterId: string }) 
             </div>
 
             <div className="mt-2 text-[11px] text-white/40">
+z>
               No spam. Unsubscribe anytime (we’ll add the link in emails).
             </div>
           </div>
