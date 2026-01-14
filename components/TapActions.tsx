@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import FollowShareDrawer from "@/components/FollowShareDrawer";
 
 function getOrCreateVisitorId(): string {
   if (typeof window === "undefined") return "server";
@@ -16,28 +17,6 @@ function getOrCreateVisitorId(): string {
 
   window.localStorage.setItem(key, id);
   return id;
-}
-
-async function reverseGeocode(lat: number, lng: number) {
-  try {
-    const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(
-      lat
-    )}&lon=${encodeURIComponent(lng)}&zoom=10&addressdetails=1`;
-
-    const res = await fetch(url, { headers: { Accept: "application/json" } });
-    if (!res.ok) return { city: null, country: null };
-
-    const data: any = await res.json();
-    const addr = data?.address || {};
-
-    const city =
-      addr.city || addr.town || addr.village || addr.hamlet || addr.county || null;
-    const country = addr.country || null;
-
-    return { city, country };
-  } catch {
-    return { city: null, country: null };
-  }
 }
 
 export default function TapActions({ lighterId }: { lighterId: string }) {
@@ -83,8 +62,7 @@ export default function TapActions({ lighterId }: { lighterId: string }) {
       const lng = position.coords.longitude;
       const accuracy_m = Math.round(position.coords.accuracy || 0);
 
-      const { city, country } = await reverseGeocode(lat, lng);
-
+      // ✅ Send only GPS + name. Server will reverse-geocode reliably.
       const res = await fetch(`/api/lighter/${encodeURIComponent(lighterId)}/tap`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -95,8 +73,6 @@ export default function TapActions({ lighterId }: { lighterId: string }) {
           lat,
           lng,
           accuracy_m,
-          city,
-          country,
         }),
       });
 
@@ -122,24 +98,19 @@ export default function TapActions({ lighterId }: { lighterId: string }) {
     window.location.href = `/lighter/${encodeURIComponent(lighterId)}/avatar-preview`;
   }
 
-  // Unified styles
-  const card =
-    "rounded-3xl border border-white/10 bg-white/5 p-4 shadow-[0_0_50px_rgba(140,90,255,0.10)]";
-  const purpleBtn =
-    "w-full rounded-2xl border border-white/10 bg-purple-500/20 px-4 py-4 text-base font-medium text-white hover:bg-purple-500/25 disabled:opacity-60";
-  const subtleMsg =
-    "rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/75";
+  const actionBtn =
+    "w-full h-14 rounded-2xl border border-white/10 text-base font-medium text-white/90 flex items-center justify-center text-center disabled:opacity-60";
 
   return (
     <div className="mt-4 space-y-3">
-      {/* Name card */}
-      <div className={card}>
+      {/* Name input */}
+      <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
         <div className="text-xs tracking-[0.25em] text-white/60">YOUR NAME (OPTIONAL)</div>
         <input
           value={displayName}
           onChange={(e) => setDisplayName(e.target.value)}
           placeholder="e.g. Night Owl / Stevie / DJ_123"
-          className="mt-3 w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-4 text-base text-white/90 placeholder:text-white/40 outline-none"
+          className="mt-3 w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/90 placeholder:text-white/40 outline-none"
           disabled={busy}
           maxLength={32}
         />
@@ -148,22 +119,37 @@ export default function TapActions({ lighterId }: { lighterId: string }) {
         </p>
       </div>
 
-      {/* Actions: 1) Tap 2) Lighter Profile */}
-      <button onClick={tap} disabled={busy} className={purpleBtn}>
+      {/* 1) Tap */}
+      <button
+        onClick={tap}
+        disabled={busy}
+        className={`${actionBtn} bg-[#2a1546] shadow-[0_10px_40px_rgba(110,50,200,0.25)]`}
+      >
         {busy ? "Logging tap…" : "Tap"}
       </button>
 
-      <button onClick={goLighterProfile} disabled={busy} className={purpleBtn}>
+      {/* 2) Lighter Profile (purple too) */}
+      <button
+        onClick={goLighterProfile}
+        disabled={busy}
+        className={`${actionBtn} bg-purple-500/20 hover:bg-purple-500/25`}
+      >
         Lighter Profile
       </button>
 
-      {/* Status */}
-      {msg ? <div className={subtleMsg}>{msg}</div> : null}
+      {/* 3) Follow & Share dropdown */}
+      <FollowShareDrawer lighterId={lighterId} />
 
-      {/* GPS disclaimer at the bottom for uniformity */}
-      <p className="pt-2 text-center text-xs leading-relaxed text-white/40">
-        Precise GPS is stored securely. Public location uses an approximate area (≤1km) and
-        shows town when possible, otherwise county.
+      {msg ? (
+        <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/80">
+          {msg}
+        </div>
+      ) : null}
+
+      {/* GPS disclaimer pushed to bottom */}
+      <p className="pt-2 text-xs leading-relaxed text-white/45">
+        Precise GPS is stored securely. Public location uses an approximate area (≤1km) and shows town when possible,
+        otherwise county.
       </p>
     </div>
   );
