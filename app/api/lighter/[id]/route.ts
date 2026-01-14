@@ -70,9 +70,9 @@ export async function GET(_req: Request, context: any) {
     }
     const unique_holders = set.size;
 
-    // birth tap (first ever)
+    // birth tap (first ever)  ✅ include display_name
     const birthRes = await supabaseRest(
-      `taps?select=id,lighter_id,visitor_id,lat,lng,accuracy_m,city,country,tapped_at&lighter_id=eq.${encodeURIComponent(
+      `taps?select=id,lighter_id,visitor_id,display_name,lat,lng,accuracy_m,city,country,tapped_at&lighter_id=eq.${encodeURIComponent(
         lighterId
       )}&order=tapped_at.asc&limit=1`,
       { method: "GET" }
@@ -80,9 +80,9 @@ export async function GET(_req: Request, context: any) {
     const birthArr = await birthRes.json();
     const birth_tap = Array.isArray(birthArr) && birthArr[0] ? birthArr[0] : null;
 
-    // latest tap
+    // latest tap ✅ include display_name
     const latestRes = await supabaseRest(
-      `taps?select=id,lighter_id,visitor_id,lat,lng,accuracy_m,city,country,tapped_at&lighter_id=eq.${encodeURIComponent(
+      `taps?select=id,lighter_id,visitor_id,display_name,lat,lng,accuracy_m,city,country,tapped_at&lighter_id=eq.${encodeURIComponent(
         lighterId
       )}&order=tapped_at.desc&limit=1`,
       { method: "GET" }
@@ -90,10 +90,11 @@ export async function GET(_req: Request, context: any) {
     const latestArr = await latestRes.json();
     let latest_tap = Array.isArray(latestArr) && latestArr[0] ? latestArr[0] : null;
 
-    // If latest tap has no city, pull the most recent tap WITH a city and use it for display fallback
+    // If latest tap has no city, pull most recent tap WITH a city for display fallback
+    // ✅ include display_name in fallback too (optional but helpful)
     if (latest_tap && !hasText(latest_tap.city)) {
       const fallbackRes = await supabaseRest(
-        `taps?select=city,country&lighter_id=eq.${encodeURIComponent(
+        `taps?select=city,country,display_name&lighter_id=eq.${encodeURIComponent(
           lighterId
         )}&city=not.is.null&order=tapped_at.desc&limit=1`,
         { method: "GET" }
@@ -102,19 +103,20 @@ export async function GET(_req: Request, context: any) {
       const fb = Array.isArray(fallbackArr) && fallbackArr[0] ? fallbackArr[0] : null;
 
       if (fb && hasText(fb.city)) {
-        // Keep the real timestamp + gps of the latest tap,
-        // only fill missing display fields so the top card stays accurate/useful.
         latest_tap = {
           ...latest_tap,
           city: fb.city,
           country: hasText(latest_tap.country) ? latest_tap.country : fb.country,
+          display_name: hasText(latest_tap.display_name)
+            ? latest_tap.display_name
+            : fb.display_name,
         };
       }
     }
 
-    // journey taps (ordered)
+    // journey taps (ordered) ✅ include display_name (THIS FIXES OWNERS LOG)
     const journeyRes = await supabaseRest(
-      `taps?select=lat,lng,city,country,accuracy_m,tapped_at,visitor_id&lighter_id=eq.${encodeURIComponent(
+      `taps?select=lat,lng,city,country,display_name,accuracy_m,tapped_at,visitor_id&lighter_id=eq.${encodeURIComponent(
         lighterId
       )}&order=tapped_at.asc`,
       { method: "GET" }
