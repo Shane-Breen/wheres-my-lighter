@@ -65,13 +65,16 @@ export default function FollowShareDrawer({ lighterId }: { lighterId: string }) 
 
   return (
     <section className="rounded-3xl border border-white/10 bg-white/5 p-5 shadow-[0_0_50px_rgba(140,90,255,0.10)]">
+      {/* Purple button (matches Tap vibe) */}
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/90"
+        className="w-full rounded-2xl bg-[#2a1546] px-4 py-4 text-base text-white/90 shadow-[0_10px_40px_rgba(110,50,200,0.25)]"
       >
-        <span className="text-xs tracking-[0.25em] text-white/70">EXTRAS</span>
-        <span className="text-xs text-white/60">{open ? "▲" : "▼"}</span>
+        <div className="flex items-center justify-between">
+          <span className="font-medium">Follow &amp; Share</span>
+          <span className="text-xs text-white/70">{open ? "▲" : "▼"}</span>
+        </div>
       </button>
 
       {open && (
@@ -83,48 +86,52 @@ export default function FollowShareDrawer({ lighterId }: { lighterId: string }) 
               <input
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="Email for updates"
-                className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none placeholder:text-white/30"
+                placeholder="you@domain.com"
+                className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-3 text-sm text-white outline-none placeholder:text-white/30"
               />
 
               <button
                 type="button"
                 disabled={busy || !email.trim()}
                 onClick={follow}
-                className="rounded-xl border border-white/10 bg-purple-500/30 px-3 py-2 text-sm text-white/90 disabled:opacity-40"
+                className="rounded-xl bg-purple-500/30 px-4 py-3 text-sm text-white/90 disabled:opacity-40"
               >
                 {busy ? "…" : "Follow"}
               </button>
             </div>
 
             <div className="mt-2 text-[11px] text-white/40">
-              We’ll email you when this lighter shows up somewhere new.
+              No spam. Unsubscribe anytime (we’ll add the link in emails).
             </div>
           </div>
 
           <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-            <div className="text-xs tracking-[0.25em] text-white/60">SHARE</div>
+            <div className="text-xs tracking-[0.25em] text-white/60">TRACKING LINK</div>
 
-            <div className="mt-3 flex gap-2">
+            <div className="mt-3 flex items-center gap-2">
+              <div className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/30 px-3 py-3 text-sm text-white/80">
+                <div className="truncate">{shareUrl || "—"}</div>
+              </div>
+
               <button
                 type="button"
                 onClick={copyLink}
-                className="flex-1 rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white/90"
+                className="rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white/90"
               >
-                Copy link
+                Copy
               </button>
 
               <button
                 type="button"
                 onClick={shareNative}
-                className="flex-1 rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white/90"
+                className="rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white/90"
               >
                 Share
               </button>
             </div>
 
             <div className="mt-2 text-[11px] text-white/40">
-              Tip: iPhone → Share → “Add to Home Screen”.
+              iPhone: tap Share → Add to Home Screen.
             </div>
           </div>
 
