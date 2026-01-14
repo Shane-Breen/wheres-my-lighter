@@ -8,6 +8,7 @@ function supabaseUrl() {
   if (!url) throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL");
   return url.replace(/\/$/, "");
 }
+
 function supabaseAnonKey() {
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!key) throw new Error("Missing NEXT_PUBLIC_SUPABASE_ANON_KEY");
@@ -28,13 +29,10 @@ async function supabaseRest(path: string, init?: RequestInit) {
   });
 }
 
-function clampString(v: any, max = 32): string | null {
+function cleanName(v: any, max = 32): string | null {
   if (typeof v !== "string") return null;
-  const s = v.trim();
-  if (!s) return null;
-  // keep it very simple + safe: remove newlines and overly weird spacing
-  const cleaned = s.replace(/\s+/g, " ").slice(0, max);
-  return cleaned.length ? cleaned : null;
+  const s = v.trim().replace(/\s+/g, " ").slice(0, max);
+  return s.length ? s : null;
 }
 
 export async function POST(req: Request, context: any) {
@@ -45,18 +43,20 @@ export async function POST(req: Request, context: any) {
 
     const lat = typeof body?.lat === "number" ? body.lat : Number(body?.lat);
     const lng = typeof body?.lng === "number" ? body.lng : Number(body?.lng);
-    const accuracy_m =
-      typeof body?.accuracy_m === "number" ? Math seen? body.accuracy_m : Number(body?.accuracy_m);
+
+    const accuracyRaw =
+      typeof body?.accuracy_m === "number" ? body.accuracy_m : Number(body?.accuracy_m);
+    const accuracy_m = Number.isFinite(accuracyRaw) ? Math.round(accuracyRaw) : null;
 
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
       return new Response("Missing/invalid lat/lng", { status: 400 });
     }
 
-    const city = clampString(body?.city, 64);
-    const country = clampString(body?.country, 64);
+    const city = cleanName(body?.city, 64);
+    const country = cleanName(body?.country, 64);
 
     // NEW: optional display name / alias
-    const display_name = clampString(body?.display_name, 32);
+    const display_name = cleanName(body?.display_name, 32);
 
     // stable visitor id per device (cookie)
     const jar = await cookies();
@@ -68,12 +68,12 @@ export async function POST(req: Request, context: any) {
       body: JSON.stringify({
         lighter_id: lighterId,
         visitor_id,
+        display_name,
         lat,
         lng,
-        accuracy_m: Number.isFinite(accuracy_m) ? Math.round(accuracy_m) : null,
+        accuracy_m,
         city,
         country,
-        display_name,
         tapped_at: new Date().toISOString(),
       }),
     });
@@ -84,7 +84,6 @@ export async function POST(req: Request, context: any) {
     }
 
     const inserted = await insertRes.json().catch(() => null);
-
     const res = Response.json({ ok: true, visitor_id, inserted });
 
     // persist visitor id cookie
