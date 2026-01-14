@@ -18,6 +18,9 @@ export default function FollowShareDrawer({ lighterId }: { lighterId: string }) 
     return `${origin}/lighter/${encodeURIComponent(lighterId)}`;
   }, [origin, lighterId]);
 
+  const purpleBtn =
+    "w-full rounded-2xl border border-white/10 bg-purple-500/20 px-4 py-4 text-base font-medium text-white hover:bg-purple-500/25 disabled:opacity-60";
+
   async function follow() {
     try {
       setBusy(true);
@@ -34,7 +37,6 @@ export default function FollowShareDrawer({ lighterId }: { lighterId: string }) 
       });
 
       const data = await res.json().catch(() => ({}));
-
       if (!res.ok || data?.ok === false) {
         throw new Error(data?.error || "Follow failed");
       }
@@ -64,13 +66,9 @@ export default function FollowShareDrawer({ lighterId }: { lighterId: string }) 
     if (navigator.share) {
       try {
         // @ts-ignore
-        await navigator.share({
-          title: "Where’s My Lighter?",
-          text: "Track this lighter",
-          url,
-        });
+        await navigator.share({ title: "Where’s My Lighter?", text: "Track this lighter", url });
       } catch {
-        // user cancelled share — no need to set an error
+        // cancelled
       }
     } else {
       copyLink();
@@ -79,22 +77,15 @@ export default function FollowShareDrawer({ lighterId }: { lighterId: string }) 
 
   return (
     <section className="rounded-3xl border border-white/10 bg-white/5 p-5 shadow-[0_0_50px_rgba(140,90,255,0.10)]">
-      {/* Purple dropdown button */}
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="w-full rounded-2xl border border-white/10 bg-purple-500/20 px-4 py-4 text-base font-medium text-white hover:bg-purple-500/25 disabled:opacity-60"
-      >
+      <button type="button" onClick={() => setOpen((v) => !v)} className={purpleBtn}>
         <div className="flex items-center justify-between">
           <span>Follow &amp; Share</span>
           <span className="text-xs text-white/70">{open ? "▲" : "▼"}</span>
         </div>
       </button>
 
-      {/* Dropdown content */}
       {open ? (
         <div className="mt-4 space-y-3">
-          {/* Follow */}
           <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
             <div className="text-xs tracking-[0.25em] text-white/60">FOLLOW THIS LIGHTER</div>
 
@@ -121,7 +112,6 @@ export default function FollowShareDrawer({ lighterId }: { lighterId: string }) 
             </div>
           </div>
 
-          {/* Share */}
           <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
             <div className="text-xs tracking-[0.25em] text-white/60">TRACKING LINK</div>
 
@@ -152,7 +142,6 @@ export default function FollowShareDrawer({ lighterId }: { lighterId: string }) 
             </div>
           </div>
 
-          {/* Status */}
           {status ? (
             <div className="rounded-2xl border border-white/10 bg-black/20 p-3 text-sm text-white/70">
               {status}
