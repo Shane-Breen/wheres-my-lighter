@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 async function reverseGeocode(lat: number, lng: number) {
@@ -11,12 +11,11 @@ async function reverseGeocode(lat: number, lng: number) {
       )}&lon=${encodeURIComponent(lng)}&zoom=10&addressdetails=1`;
 
     const res = await fetch(url, {
-      headers: {
-        Accept: "application/json",
-      },
+      headers: { Accept: "application/json" },
     });
 
     if (!res.ok) return { city: null, country: null };
+
     const data: any = await res.json();
     const addr = data?.address || {};
 
@@ -40,6 +39,22 @@ export default function TapActions({ lighterId }: { lighterId: string }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+
+  // NEW: optional name/alias
+  const [displayName, setDisplayName] = useState("");
+
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem("wml_display_name");
+      if (saved) setDisplayName(saved);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("wml_display_name", displayName);
+    } catch {}
+  }, [displayName]);
 
   async function tap() {
     setMsg(null);
@@ -66,21 +81,19 @@ export default function TapActions({ lighterId }: { lighterId: string }) {
 
       const { city, country } = await reverseGeocode(lat, lng);
 
-      const res = await fetch(
-        `/api/lighter/${encodeURIComponent(lighterId)}/tap`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          cache: "no-store",
-          body: JSON.stringify({
-            lat,
-            lng,
-            accuracy_m,
-            city,
-            country,
-          }),
-        }
-      );
+      const res = await fetch(`/api/lighter/${encodeURIComponent(lighterId)}/tap`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({
+          lat,
+          lng,
+          accuracy_m,
+          city,
+          country,
+          display_name: displayName?.trim() ? displayName.trim() : null,
+        }),
+      });
 
       if (!res.ok) {
         const t = await res.text();
@@ -106,6 +119,23 @@ export default function TapActions({ lighterId }: { lighterId: string }) {
 
   return (
     <div className="mt-4 space-y-3">
+      {/* NEW: name input */}
+      <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+        <div className="text-[10px] tracking-[0.25em] text-white/50">
+          YOUR NAME (OPTIONAL)
+        </div>
+        <input
+          value={displayName}
+          onChange={(e) => setDisplayName(e.target.value)}
+          placeholder="e.g. Stevie / Night Owl / DJ_123"
+          className="mt-2 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white placeholder:text-white/30 outline-none"
+          maxLength={32}
+        />
+        <div className="mt-2 text-xs text-white/40">
+          This name will appear in the Owners Log for your taps.
+        </div>
+      </div>
+
       <button
         onClick={openLighterProfile}
         disabled={busy}
@@ -123,8 +153,8 @@ export default function TapActions({ lighterId }: { lighterId: string }) {
       </button>
 
       <p className="text-xs leading-relaxed text-white/50">
-        Precise GPS is stored securely. Public location uses an approximate area
-        (≤1km) and shows town when possible, otherwise county.
+        Precise GPS is stored securely. Public location uses an approximate area (≤1km)
+        and shows town when possible, otherwise county.
       </p>
 
       {msg ? (
