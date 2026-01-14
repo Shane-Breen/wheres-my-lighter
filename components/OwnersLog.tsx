@@ -11,6 +11,19 @@ type OwnerRow = {
   last_seen?: string | null;
 };
 
+function fallbackName(visitorId: string) {
+  if (!visitorId || visitorId === "unknown") return "Anonymous";
+  return `Anonymous #${visitorId.slice(-4).toUpperCase()}`;
+}
+
+function cleanName(v: any): string | null {
+  if (typeof v !== "string") return null;
+  const s = v.trim().replace(/\s+/g, " ");
+  if (!s) return null;
+  // keep it tidy
+  return s.slice(0, 32);
+}
+
 export default function OwnersLog({ lighterId }: { lighterId: string }) {
   const [rows, setRows] = useState<OwnerRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -37,18 +50,19 @@ export default function OwnersLog({ lighterId }: { lighterId: string }) {
           null;
 
         if (Array.isArray(direct) && direct.length) {
-          const normalized: OwnerRow[] = direct.map((r: any) => ({
-            visitor_id: String(r?.visitor_id ?? r?.visitorId ?? "unknown"),
-            display_name: String(
-              r?.display_name ??
-                r?.displayName ??
-                `Anonymous #${String(r?.visitor_id ?? "").slice(-4).toUpperCase()}`
-            ),
-            city: r?.city ?? null,
-            country: r?.country ?? null,
-            taps: Number(r?.taps ?? r?.tap_count ?? 1),
-            last_seen: r?.last_seen ?? r?.lastSeen ?? r?.tapped_at ?? null,
-          }));
+          const normalized: OwnerRow[] = direct.map((r: any) => {
+            const visitor = String(r?.visitor_id ?? r?.visitorId ?? "unknown");
+            const dn = cleanName(r?.display_name ?? r?.displayName);
+
+            return {
+              visitor_id: visitor,
+              display_name: dn ?? fallbackName(visitor),
+              city: r?.city ?? null,
+              country: r?.country ?? null,
+              taps: Number(r?.taps ?? r?.tap_count ?? 1),
+              last_seen: r?.last_seen ?? r?.lastSeen ?? r?.tapped_at ?? null,
+            };
+          });
 
           if (alive) setRows(normalized);
           return;
@@ -66,13 +80,13 @@ export default function OwnersLog({ lighterId }: { lighterId: string }) {
           const country = t?.country ?? null;
           const tappedAt = t?.tapped_at ? String(t.tapped_at) : null;
 
+          // NEW: prefer display_name from taps when present
+          const fromTapName = cleanName(t?.display_name);
+
           if (!existing) {
             map.set(visitor, {
               visitor_id: visitor,
-              display_name:
-                visitor === "unknown"
-                  ? "Anonymous"
-                  : `Anonymous #${visitor.slice(-4).toUpperCase()}`,
+              display_name: fromTapName ?? fallbackName(visitor),
               city,
               country,
               taps: 1,
@@ -81,11 +95,19 @@ export default function OwnersLog({ lighterId }: { lighterId: string }) {
           } else {
             existing.taps += 1;
 
+            // Upgrade name if we ever see a real one
+            if (fromTapName && existing.display_name === fallbackName(visitor)) {
+              existing.display_name = fromTapName;
+            }
+
             // keep most recent "last_seen"
             if (tappedAt && (!existing.last_seen || tappedAt > existing.last_seen)) {
               existing.last_seen = tappedAt;
               existing.city = city ?? existing.city;
               existing.country = country ?? existing.country;
+
+              // If the newest tap has a name, prefer it
+              if (fromTapName) existing.display_name = fromTapName;
             }
           }
         }
