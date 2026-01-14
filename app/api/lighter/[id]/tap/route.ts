@@ -5,7 +5,6 @@ function supabaseUrl() {
   if (!url) throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL");
   return url.replace(/\/$/, "");
 }
-
 function supabaseAnonKey() {
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!key) throw new Error("Missing NEXT_PUBLIC_SUPABASE_ANON_KEY");
@@ -19,55 +18,67 @@ async function supabaseRest(path: string, init?: RequestInit) {
       apikey: supabaseAnonKey(),
       Authorization: `Bearer ${supabaseAnonKey()}`,
       "Content-Type": "application/json",
-      Prefer: "return=minimal",
+      Prefer: "return=representation",
       ...(init?.headers || {}),
     },
     cache: "no-store",
   });
 }
 
-export async function POST(req: Request, context: any) {
-  try {
-    const lighterId = context?.params?.id;
-    if (!lighterId) {
-      return new Response("Missing lighter id", { status: 400 });
-    }
+function cleanName(v: any): string | null {
+  if (typeof v !== "string") return null;
+  const s = v.trim();
+  if (!s) return null;
+  // keep it tight + safe
+  return s.slice(0, 40);
+}
 
+export async function POST(req: Request, context: any) {
+  const lighterId = context?.params?.id as string;
+
+  try {
     const body = await req.json();
 
-    const lat = Number(body?.lat);
-    const lng = Number(body?.lng);
+    const lat = typeof body?.lat === "number" ? body.lat : Number(body?.lat);
+    const lng = typeof body?.lng === "number" ? body.lng : Number(body?.lng);
+    const accuracy_m =
+      typeof body?.accuracy_m === "number" ? Math.round(body.accuracy_m) : Math.round(Number(body?.accuracy_m || 0));
 
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
       return new Response("Missing/invalid lat/lng", { status: 400 });
     }
 
-    const display_name =
-      typeof body?.display_name === "string" && body.display_name.trim().length > 0
-        ? body.display_name.trim().slice(0, 40)
-        : null;
+    // IMPORTANT: stable id from client; only generate if missing
+    const visitor_id =
+      (typeof body?.visitor_id === "string" && body.visitor_id.trim()) ||
+      (typeof crypto !== "undefined" && "randomUUID" in crypto && crypto.randomUUID()) ||
+      `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-    const payload = {
+    const display_name = cleanName(body?.display_name);
+
+    const insertPayload = {
       lighter_id: lighterId,
-      visitor_id: body?.visitor_id ?? crypto.randomUUID(),
+      visitor_id,
+      display_name, // <— this is what you’re missing in pilot-002 right now
       lat,
       lng,
-      accuracy_m: Number(body?.accuracy_m) || null,
-      city: body?.city ?? null,
-      country: body?.country ?? null,
-      display_name, // ✅ THIS IS THE FIX
+      accuracy_m,
+      tapped_at: new Date().toISOString(),
     };
 
-    await supabaseRest("taps", {
+    const res = await supabaseRest(`taps`, {
       method: "POST",
-      body: JSON.stringify(payload),
+      body: JSON.stringify(insertPayload),
     });
 
-    return Response.json({ ok: true });
+    if (!res.ok) {
+      const t = await res.text();
+      return new Response(t || "Insert failed", { status: 500 });
+    }
+
+    const rows = await res.json();
+    return Response.json({ ok: true, inserted: rows?.[0] ?? null });
   } catch (e: any) {
-    return Response.json(
-      { ok: false, error: e?.message ?? "Failed" },
-      { status: 500 }
-    );
+    return Response.json({ ok: false, error: e?.message ?? "Tap failed" }, { status: 500 });
   }
 }
