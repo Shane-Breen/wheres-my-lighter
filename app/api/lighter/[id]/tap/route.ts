@@ -29,9 +29,9 @@ async function supabaseRest(path: string, init?: RequestInit) {
   });
 }
 
-function cleanName(v: any, max = 32): string | null {
+function cleanText(v: any, maxLen: number): string | null {
   if (typeof v !== "string") return null;
-  const s = v.trim().replace(/\s+/g, " ").slice(0, max);
+  const s = v.trim().replace(/\s+/g, " ").slice(0, maxLen);
   return s.length ? s : null;
 }
 
@@ -44,21 +44,21 @@ export async function POST(req: Request, context: any) {
     const lat = typeof body?.lat === "number" ? body.lat : Number(body?.lat);
     const lng = typeof body?.lng === "number" ? body.lng : Number(body?.lng);
 
-    const accuracyRaw =
+    const acc =
       typeof body?.accuracy_m === "number" ? body.accuracy_m : Number(body?.accuracy_m);
-    const accuracy_m = Number.isFinite(accuracyRaw) ? Math.round(accuracyRaw) : null;
+    const accuracy_m = Number.isFinite(acc) ? Math.round(acc) : null;
 
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
       return new Response("Missing/invalid lat/lng", { status: 400 });
     }
 
-    const city = cleanName(body?.city, 64);
-    const country = cleanName(body?.country, 64);
+    const city = cleanText(body?.city, 64);
+    const country = cleanText(body?.country, 64);
 
-    // NEW: optional display name / alias
-    const display_name = cleanName(body?.display_name, 32);
+    // ✅ THIS is what you need for the Owners Log names
+    const display_name = cleanText(body?.display_name, 32);
 
-    // stable visitor id per device (cookie)
+    // Stable visitor id per device via cookie
     const jar = await cookies();
     const existing = jar.get("wml_visitor_id")?.value;
     const visitor_id = existing || randomUUID();
@@ -68,7 +68,7 @@ export async function POST(req: Request, context: any) {
       body: JSON.stringify({
         lighter_id: lighterId,
         visitor_id,
-        display_name,
+        display_name, // ✅ WRITES TO DB
         lat,
         lng,
         accuracy_m,
@@ -86,7 +86,7 @@ export async function POST(req: Request, context: any) {
     const inserted = await insertRes.json().catch(() => null);
     const res = Response.json({ ok: true, visitor_id, inserted });
 
-    // persist visitor id cookie
+    // Persist visitor id cookie
     res.headers.append(
       "Set-Cookie",
       `wml_visitor_id=${visitor_id}; Path=/; Max-Age=${60 * 60 * 24 * 365}; SameSite=Lax`
