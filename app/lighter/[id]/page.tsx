@@ -1,6 +1,7 @@
 import JourneyMap from "@/components/JourneyMap";
 import OwnersLog from "@/components/OwnersLog";
 import TapActions from "@/components/TapActions";
+import FollowShareDrawer from "@/components/FollowShareDrawer";
 
 export const runtime = "nodejs";
 
@@ -176,6 +177,7 @@ export default async function Page({ params }: PageProps) {
           </div>
 
           <TapActions lighterId={lighterId} />
+          <FollowShareDrawer lighterId={lighterId} />
         </div>
       </main>
     );
@@ -264,6 +266,9 @@ export default async function Page({ params }: PageProps) {
 
         {/* Actions */}
         <TapActions lighterId={lighterId} />
+
+        {/* Follow/Share dropdown */}
+        <FollowShareDrawer lighterId={lighterId} />
       </div>
     </main>
   );
