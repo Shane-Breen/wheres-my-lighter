@@ -4,6 +4,52 @@ import TapActions from "@/components/TapActions";
 
 export const runtime = "nodejs";
 
+function supabaseUrl() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (!url) throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL");
+  return url.replace(/\/$/, "");
+}
+function supabaseAnonKey() {
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!key) throw new Error("Missing NEXT_PUBLIC_SUPABASE_ANON_KEY");
+  return key;
+}
+
+async function supabaseRest(path: string, init?: RequestInit) {
+  return fetch(`${supabaseUrl()}/rest/v1/${path}`, {
+    ...init,
+    headers: {
+      apikey: supabaseAnonKey(),
+      Authorization: `Bearer ${supabaseAnonKey()}`,
+      "Content-Type": "application/json",
+      ...(init?.headers || {}),
+    },
+    cache: "no-store",
+  });
+}
+
+function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
+  const R = 6371;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+
+  const s =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+
+  const c = 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s));
+  return R * c;
+}
+
+function hasText(v: any) {
+  return typeof v === "string" && v.trim().length > 0;
+}
+
 function toNumber(v: any): number | null {
   if (typeof v === "number" && Number.isFinite(v)) return v;
   if (typeof v === "string") {
@@ -11,6 +57,105 @@ function toNumber(v: any): number | null {
     if (Number.isFinite(n)) return n;
   }
   return null;
+}
+
+async function getLighterDataDirect(lighterId: string) {
+  // total taps
+  const countRes = await supabaseRest(
+    `taps?select=id&lighter_id=eq.${encodeURIComponent(lighterId)}`,
+    { method: "GET" }
+  );
+  const taps = await countRes.json();
+  const total_taps = Array.isArray(taps) ? taps.length : 0;
+
+  // unique holders
+  const uniqRes = await supabaseRest(
+    `taps?select=visitor_id&lighter_id=eq.${encodeURIComponent(lighterId)}`,
+    { method: "GET" }
+  );
+  const uniqRows = await uniqRes.json();
+  const set = new Set<string>();
+  if (Array.isArray(uniqRows)) {
+    for (const r of uniqRows) if (r?.visitor_id) set.add(String(r.visitor_id));
+  }
+  const unique_holders = set.size;
+
+  // birth tap
+  const birthRes = await supabaseRest(
+    `taps?select=id,lighter_id,visitor_id,display_name,lat,lng,accuracy_m,city,country,tapped_at&lighter_id=eq.${encodeURIComponent(
+      lighterId
+    )}&order=tapped_at.asc&limit=1`,
+    { method: "GET" }
+  );
+  const birthArr = await birthRes.json();
+  const birth_tap = Array.isArray(birthArr) && birthArr[0] ? birthArr[0] : null;
+
+  // latest tap (raw)
+  const latestRes = await supabaseRest(
+    `taps?select=id,lighter_id,visitor_id,display_name,lat,lng,accuracy_m,city,country,tapped_at&lighter_id=eq.${encodeURIComponent(
+      lighterId
+    )}&order=tapped_at.desc&limit=1`,
+    { method: "GET" }
+  );
+  const latestArr = await latestRes.json();
+  let latest_tap = Array.isArray(latestArr) && latestArr[0] ? latestArr[0] : null;
+
+  // ✅ display fallback: if latest tap has no city, borrow most recent tap WITH a city/country for display only
+  if (latest_tap && !hasText(latest_tap.city)) {
+    const fallbackRes = await supabaseRest(
+      `taps?select=city,country&lighter_id=eq.${encodeURIComponent(
+        lighterId
+      )}&city=not.is.null&order=tapped_at.desc&limit=1`,
+      { method: "GET" }
+    );
+    const fallbackArr = await fallbackRes.json();
+    const fb = Array.isArray(fallbackArr) && fallbackArr[0] ? fallbackArr[0] : null;
+
+    if (fb && hasText(fb.city)) {
+      latest_tap = {
+        ...latest_tap,
+        city: fb.city,
+        country: hasText(latest_tap.country) ? latest_tap.country : fb.country,
+      };
+    }
+  }
+
+  // journey (include display_name so OwnersLog can use it)
+  const journeyRes = await supabaseRest(
+    `taps?select=lat,lng,city,country,accuracy_m,tapped_at,visitor_id,display_name&lighter_id=eq.${encodeURIComponent(
+      lighterId
+    )}&order=tapped_at.asc`,
+    { method: "GET" }
+  );
+  const journey = await journeyRes.json();
+
+  // distance
+  let distance_km = 0;
+  if (Array.isArray(journey)) {
+    const pts = journey
+      .map((p) => {
+        const lat = toNumber(p?.lat);
+        const lng = toNumber(p?.lng);
+        if (lat === null || lng === null) return null;
+        return { lat, lng };
+      })
+      .filter(Boolean) as { lat: number; lng: number }[];
+
+    for (let i = 1; i < pts.length; i++) {
+      distance_km += haversineKm(pts[i - 1], pts[i]);
+    }
+  }
+
+  return {
+    ok: true,
+    lighter_id: lighterId,
+    total_taps,
+    unique_holders,
+    distance_km: Math.round(distance_km * 10) / 10,
+    birth_tap,
+    latest_tap,
+    journey: Array.isArray(journey) ? journey : [],
+  };
 }
 
 type PageProps = {
@@ -24,18 +169,7 @@ export default async function Page({ params }: PageProps) {
   let error: string | null = null;
 
   try {
-    const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || ""}/api/lighter/${encodeURIComponent(lighterId)}`, {
-      cache: "no-store",
-    });
-
-    // If NEXT_PUBLIC_BASE_URL isn't set, fall back to relative fetch (works on Vercel/Next)
-    if (!res.ok) {
-      const res2 = await fetch(`/api/lighter/${encodeURIComponent(lighterId)}`, { cache: "no-store" });
-      if (!res2.ok) throw new Error(await res2.text());
-      data = await res2.json();
-    } else {
-      data = await res.json();
-    }
+    data = await getLighterDataDirect(lighterId);
   } catch (e: any) {
     error = e?.message || "Failed to load lighter";
   }
@@ -101,6 +235,7 @@ export default async function Page({ params }: PageProps) {
               <h1 className="text-[18px] font-semibold leading-tight whitespace-nowrap">
                 Where’s My Lighter?
               </h1>
+
               <p className="mt-0.5 text-[9px] leading-tight text-white/40 whitespace-nowrap">
                 Tracking this tiny flame across the globe
               </p>
