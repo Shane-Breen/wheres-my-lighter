@@ -1,37 +1,83 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
-function getOrCreateVisitorId() {
-  if (typeof window === "undefined") return null;
-
+/**
+ * Stable per-device visitor id so repeat taps don't become new "owners".
+ * Stored locally. (If the user clears browser storage, it'll regenerate.)
+ */
+function getOrCreateVisitorId(): string {
+  if (typeof window === "undefined") return "server";
   const key = "wml_visitor_id";
-  let id = window.localStorage.getItem(key);
-  if (!id) {
-    id =
-      (typeof crypto !== "undefined" && "randomUUID" in crypto && crypto.randomUUID()) ||
-      `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    window.localStorage.setItem(key, id);
-  }
+
+  const existing = window.localStorage.getItem(key);
+  if (existing && existing.length >= 12) return existing;
+
+  // Use crypto.randomUUID when available
+  const id =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `v_${Math.random().toString(16).slice(2)}_${Date.now().toString(16)}`;
+
+  window.localStorage.setItem(key, id);
   return id;
 }
 
-function getSavedDisplayName() {
-  if (typeof window === "undefined") return "";
-  return window.localStorage.getItem("wml_display_name") ?? "";
-}
+async function reverseGeocode(lat: number, lng: number) {
+  try {
+    const url =
+      `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(
+        lat
+      )}&lon=${encodeURIComponent(lng)}&zoom=10&addressdetails=1`;
 
-function saveDisplayName(v: string) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem("wml_display_name", v);
+    const res = await fetch(url, {
+      headers: {
+        Accept: "application/json",
+      },
+    });
+
+    if (!res.ok) return { city: null, country: null };
+    const data: any = await res.json();
+    const addr = data?.address || {};
+
+    const city =
+      addr.city ||
+      addr.town ||
+      addr.village ||
+      addr.hamlet ||
+      addr.county ||
+      null;
+
+    const country = addr.country || null;
+
+    return { city, country };
+  } catch {
+    return { city: null, country: null };
+  }
 }
 
 export default function TapActions({ lighterId }: { lighterId: string }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
-  const [displayName, setDisplayName] = useState<string>(() => getSavedDisplayName());
+
+  // Name the user types (optional)
+  const [displayName, setDisplayName] = useState("");
+
+  // Persist name too (nice UX)
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem("wml_display_name");
+      if (saved) setDisplayName(saved);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("wml_display_name", displayName);
+    } catch {}
+  }, [displayName]);
 
   async function tap() {
     setMsg(null);
@@ -44,10 +90,6 @@ export default function TapActions({ lighterId }: { lighterId: string }) {
       }
 
       const visitor_id = getOrCreateVisitorId();
-      if (!visitor_id) {
-        setMsg("Couldn’t create a visitor id.");
-        return;
-      }
 
       const position = await new Promise<GeolocationPosition>((resolve, reject) => {
         navigator.geolocation.getCurrentPosition(resolve, reject, {
@@ -61,16 +103,20 @@ export default function TapActions({ lighterId }: { lighterId: string }) {
       const lng = position.coords.longitude;
       const accuracy_m = Math.round(position.coords.accuracy || 0);
 
+      const { city, country } = await reverseGeocode(lat, lng);
+
       const res = await fetch(`/api/lighter/${encodeURIComponent(lighterId)}/tap`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         cache: "no-store",
         body: JSON.stringify({
-          visitor_id,
-          display_name: displayName?.trim() ? displayName.trim() : null,
+          visitor_id,                 // ✅ stable owner id
+          display_name: displayName?.trim() || null, // ✅ optional name/alias
           lat,
           lng,
           accuracy_m,
+          city,
+          country,
         }),
       });
 
@@ -78,9 +124,6 @@ export default function TapActions({ lighterId }: { lighterId: string }) {
         const t = await res.text();
         throw new Error(t || "Tap failed");
       }
-
-      // Persist name locally so it stays filled next time
-      saveDisplayName(displayName);
 
       setMsg("Tap logged ✨");
       router.refresh();
@@ -96,26 +139,29 @@ export default function TapActions({ lighterId }: { lighterId: string }) {
   }
 
   function goLighterProfile() {
+    // change if your route differs
     window.location.href = `/lighter/${encodeURIComponent(lighterId)}/avatar-preview`;
   }
 
   return (
     <div className="mt-4 space-y-3">
+      {/* Name input */}
       <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
         <div className="text-xs tracking-[0.25em] text-white/60">YOUR NAME (OPTIONAL)</div>
         <input
           value={displayName}
           onChange={(e) => setDisplayName(e.target.value)}
           placeholder="e.g. Shane Breen"
-          className="mt-3 w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-base text-white/90 placeholder:text-white/30 outline-none"
+          className="mt-3 w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/90 placeholder:text-white/40 outline-none"
           disabled={busy}
-          maxLength={40}
+          maxLength={32}
         />
-        <div className="mt-2 text-xs text-white/40">
+        <p className="mt-2 text-xs leading-relaxed text-white/45">
           This name will appear in the Owners Log for your taps.
-        </div>
+        </p>
       </div>
 
+      {/* Buttons */}
       <button
         onClick={goLighterProfile}
         disabled={busy}
@@ -133,8 +179,8 @@ export default function TapActions({ lighterId }: { lighterId: string }) {
       </button>
 
       <p className="text-xs leading-relaxed text-white/50">
-        Precise GPS is stored securely. Public location uses an approximate area (≤1km) and shows town when possible,
-        otherwise county.
+        Precise GPS is stored securely. Public location uses an approximate area (≤1km)
+        and shows town when possible, otherwise county.
       </p>
 
       {msg ? (
