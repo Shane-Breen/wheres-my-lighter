@@ -1,77 +1,100 @@
 export const runtime = "nodejs";
 
+import { cookies } from "next/headers";
+import { randomUUID } from "crypto";
+
 function supabaseUrl() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   if (!url) throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL");
   return url.replace(/\/$/, "");
 }
-
 function supabaseAnonKey() {
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!key) throw new Error("Missing NEXT_PUBLIC_SUPABASE_ANON_KEY");
   return key;
 }
 
-async function supabaseInsert(path: string, body: any) {
+async function supabaseRest(path: string, init?: RequestInit) {
   return fetch(`${supabaseUrl()}/rest/v1/${path}`, {
-    method: "POST",
+    ...init,
     headers: {
       apikey: supabaseAnonKey(),
       Authorization: `Bearer ${supabaseAnonKey()}`,
       "Content-Type": "application/json",
-      Prefer: "return=minimal",
+      Prefer: "return=representation",
+      ...(init?.headers || {}),
     },
-    body: JSON.stringify(body),
+    cache: "no-store",
   });
 }
 
-function getVisitorId(req: Request) {
-  const cookie = req.headers.get("cookie") || "";
-  const match = cookie.match(/visitor_id=([^;]+)/);
-  if (match) return match[1];
-  return crypto.randomUUID();
+function clampString(v: any, max = 32): string | null {
+  if (typeof v !== "string") return null;
+  const s = v.trim();
+  if (!s) return null;
+  // keep it very simple + safe: remove newlines and overly weird spacing
+  const cleaned = s.replace(/\s+/g, " ").slice(0, max);
+  return cleaned.length ? cleaned : null;
 }
 
 export async function POST(req: Request, context: any) {
+  const lighterId = context?.params?.id as string;
+
   try {
-    const lighterId = context?.params?.id as string;
-    if (!lighterId) {
-      return Response.json({ ok: false, error: "Missing lighter id" }, { status: 400 });
+    const body = await req.json().catch(() => ({}));
+
+    const lat = typeof body?.lat === "number" ? body.lat : Number(body?.lat);
+    const lng = typeof body?.lng === "number" ? body.lng : Number(body?.lng);
+    const accuracy_m =
+      typeof body?.accuracy_m === "number" ? Math seen? body.accuracy_m : Number(body?.accuracy_m);
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return new Response("Missing/invalid lat/lng", { status: 400 });
     }
 
-    const body = await req.json();
-    const { lat, lng, accuracy_m, city, country } = body;
+    const city = clampString(body?.city, 64);
+    const country = clampString(body?.country, 64);
 
-    if (typeof lat !== "number" || typeof lng !== "number") {
-      return Response.json({ ok: false, error: "Missing lat/lng" }, { status: 400 });
-    }
+    // NEW: optional display name / alias
+    const display_name = clampString(body?.display_name, 32);
 
-    const visitor_id = getVisitorId(req);
+    // stable visitor id per device (cookie)
+    const jar = await cookies();
+    const existing = jar.get("wml_visitor_id")?.value;
+    const visitor_id = existing || randomUUID();
 
-    await supabaseInsert("taps", {
-      lighter_id: lighterId,
-      visitor_id,
-      lat,
-      lng,
-      accuracy_m: accuracy_m ?? null,
-      city: city ?? null,
-      country: country ?? null,
-      tapped_at: new Date().toISOString(),
+    const insertRes = await supabaseRest("taps", {
+      method: "POST",
+      body: JSON.stringify({
+        lighter_id: lighterId,
+        visitor_id,
+        lat,
+        lng,
+        accuracy_m: Number.isFinite(accuracy_m) ? Math.round(accuracy_m) : null,
+        city,
+        country,
+        display_name,
+        tapped_at: new Date().toISOString(),
+      }),
     });
 
-    return new Response(
-      JSON.stringify({ ok: true }),
-      {
-        status: 200,
-        headers: {
-          "Set-Cookie": `visitor_id=${visitor_id}; Path=/; Max-Age=31536000; SameSite=Lax`,
-        },
-      }
+    if (!insertRes.ok) {
+      const t = await insertRes.text().catch(() => "");
+      return new Response(t || "Failed to insert tap", { status: 500 });
+    }
+
+    const inserted = await insertRes.json().catch(() => null);
+
+    const res = Response.json({ ok: true, visitor_id, inserted });
+
+    // persist visitor id cookie
+    res.headers.append(
+      "Set-Cookie",
+      `wml_visitor_id=${visitor_id}; Path=/; Max-Age=${60 * 60 * 24 * 365}; SameSite=Lax`
     );
+
+    return res;
   } catch (e: any) {
-    return Response.json(
-      { ok: false, error: e?.message ?? "Tap failed" },
-      { status: 500 }
-    );
+    return new Response(e?.message || "Tap failed", { status: 500 });
   }
 }
