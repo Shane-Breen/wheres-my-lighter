@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import FollowShareCard from "@/components/FollowShareCard";
 
 function getOrCreateVisitorId(): string {
   if (typeof window === "undefined") return "server";
@@ -174,9 +173,6 @@ export default function TapActions({ lighterId }: { lighterId: string }) {
           {msg}
         </div>
       ) : null}
-
-      {/* ✅ Combined “Follow + Share + Home Screen” card */}
-      <FollowShareCard lighterId={lighterId} />
     </div>
   );
 }
