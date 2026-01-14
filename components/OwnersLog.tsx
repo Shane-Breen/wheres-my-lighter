@@ -11,17 +11,13 @@ type OwnerRow = {
   last_seen?: string | null;
 };
 
-function fallbackName(visitorId: string) {
-  if (!visitorId || visitorId === "unknown") return "Anonymous";
-  return `Anonymous #${visitorId.slice(-4).toUpperCase()}`;
+function hasText(v: any) {
+  return typeof v === "string" && v.trim().length > 0;
 }
 
-function cleanName(v: any): string | null {
-  if (typeof v !== "string") return null;
-  const s = v.trim().replace(/\s+/g, " ");
-  if (!s) return null;
-  // keep it tidy
-  return s.slice(0, 32);
+function anonLabel(visitorId: string) {
+  const tail = (visitorId || "").slice(-4).toUpperCase();
+  return tail ? `Anonymous #${tail}` : "Anonymous";
 }
 
 export default function OwnersLog({ lighterId }: { lighterId: string }) {
@@ -35,58 +31,34 @@ export default function OwnersLog({ lighterId }: { lighterId: string }) {
       try {
         setLoading(true);
 
-        // Pull everything from your existing lighter endpoint
+        // Pull from your existing endpoint
         const res = await fetch(`/api/lighter/${encodeURIComponent(lighterId)}`, {
           cache: "no-store",
         });
+
         const data = await res.json();
 
-        // Try common shapes first (in case your API already returns an owners list)
-        const direct =
-          data?.owners_log ||
-          data?.owners ||
-          data?.ownersLog ||
-          data?.owner_rows ||
-          null;
-
-        if (Array.isArray(direct) && direct.length) {
-          const normalized: OwnerRow[] = direct.map((r: any) => {
-            const visitor = String(r?.visitor_id ?? r?.visitorId ?? "unknown");
-            const dn = cleanName(r?.display_name ?? r?.displayName);
-
-            return {
-              visitor_id: visitor,
-              display_name: dn ?? fallbackName(visitor),
-              city: r?.city ?? null,
-              country: r?.country ?? null,
-              taps: Number(r?.taps ?? r?.tap_count ?? 1),
-              last_seen: r?.last_seen ?? r?.lastSeen ?? r?.tapped_at ?? null,
-            };
-          });
-
-          if (alive) setRows(normalized);
-          return;
-        }
-
-        // Otherwise: compute Owners Log from journey/taps
         const journey: any[] = Array.isArray(data?.journey) ? data.journey : [];
+
+        // visitor_id -> aggregate
         const map = new Map<string, OwnerRow>();
 
         for (const t of journey) {
-          const visitor = t?.visitor_id ? String(t.visitor_id) : "unknown";
+          const visitor = hasText(t?.visitor_id) ? String(t.visitor_id) : "unknown";
+          const tappedAt = hasText(t?.tapped_at) ? String(t.tapped_at) : null;
+
+          const city = hasText(t?.city) ? String(t.city) : null;
+          const country = hasText(t?.country) ? String(t.country) : null;
+
+          // IMPORTANT: name can come from tap.display_name if present
+          const tapName = hasText(t?.display_name) ? String(t.display_name).trim() : null;
+
           const existing = map.get(visitor);
-
-          const city = t?.city ?? null;
-          const country = t?.country ?? null;
-          const tappedAt = t?.tapped_at ? String(t.tapped_at) : null;
-
-          // NEW: prefer display_name from taps when present
-          const fromTapName = cleanName(t?.display_name);
 
           if (!existing) {
             map.set(visitor, {
               visitor_id: visitor,
-              display_name: fromTapName ?? fallbackName(visitor),
+              display_name: tapName ?? anonLabel(visitor),
               city,
               country,
               taps: 1,
@@ -95,24 +67,21 @@ export default function OwnersLog({ lighterId }: { lighterId: string }) {
           } else {
             existing.taps += 1;
 
-            // Upgrade name if we ever see a real one
-            if (fromTapName && existing.display_name === fallbackName(visitor)) {
-              existing.display_name = fromTapName;
-            }
-
-            // keep most recent "last_seen"
+            // newest last_seen wins
             if (tappedAt && (!existing.last_seen || tappedAt > existing.last_seen)) {
               existing.last_seen = tappedAt;
               existing.city = city ?? existing.city;
               existing.country = country ?? existing.country;
+            }
 
-              // If the newest tap has a name, prefer it
-              if (fromTapName) existing.display_name = fromTapName;
+            // If we ever get a real name, keep it (prefer most recent non-empty)
+            if (tapName) {
+              existing.display_name = tapName;
             }
           }
         }
 
-        // Sort highest taps first, then newest
+        // Sort: most taps first, then most recent
         const computed = Array.from(map.values()).sort((a, b) => {
           if (b.taps !== a.taps) return b.taps - a.taps;
           return String(b.last_seen ?? "").localeCompare(String(a.last_seen ?? ""));
