@@ -57,7 +57,6 @@ function toNumber(v: any): number | null {
 }
 
 async function getLighterDataDirect(lighterId: string) {
-  // total taps
   const countRes = await supabaseRest(
     `taps?select=id&lighter_id=eq.${encodeURIComponent(lighterId)}`,
     { method: "GET" }
@@ -65,7 +64,6 @@ async function getLighterDataDirect(lighterId: string) {
   const taps = await countRes.json();
   const total_taps = Array.isArray(taps) ? taps.length : 0;
 
-  // unique holders
   const uniqRes = await supabaseRest(
     `taps?select=visitor_id&lighter_id=eq.${encodeURIComponent(lighterId)}`,
     { method: "GET" }
@@ -77,7 +75,6 @@ async function getLighterDataDirect(lighterId: string) {
   }
   const unique_holders = set.size;
 
-  // birth tap
   const birthRes = await supabaseRest(
     `taps?select=id,lighter_id,visitor_id,lat,lng,accuracy_m,city,country,tapped_at&lighter_id=eq.${encodeURIComponent(
       lighterId
@@ -87,7 +84,6 @@ async function getLighterDataDirect(lighterId: string) {
   const birthArr = await birthRes.json();
   const birth_tap = Array.isArray(birthArr) && birthArr[0] ? birthArr[0] : null;
 
-  // latest tap
   const latestRes = await supabaseRest(
     `taps?select=id,lighter_id,visitor_id,lat,lng,accuracy_m,city,country,tapped_at&lighter_id=eq.${encodeURIComponent(
       lighterId
@@ -97,7 +93,6 @@ async function getLighterDataDirect(lighterId: string) {
   const latestArr = await latestRes.json();
   const latest_tap = Array.isArray(latestArr) && latestArr[0] ? latestArr[0] : null;
 
-  // journey
   const journeyRes = await supabaseRest(
     `taps?select=lat,lng,city,country,accuracy_m,tapped_at,visitor_id&lighter_id=eq.${encodeURIComponent(
       lighterId
@@ -106,7 +101,6 @@ async function getLighterDataDirect(lighterId: string) {
   );
   const journey = await journeyRes.json();
 
-  // distance
   let distance_km = 0;
   if (Array.isArray(journey)) {
     const pts = journey
@@ -135,9 +129,7 @@ async function getLighterDataDirect(lighterId: string) {
   };
 }
 
-type PageProps = {
-  params: Promise<{ id: string }>;
-};
+type PageProps = { params: Promise<{ id: string }> };
 
 export default async function Page({ params }: PageProps) {
   const { id: lighterId } = await params;
@@ -178,6 +170,11 @@ export default async function Page({ params }: PageProps) {
 
           <TapActions lighterId={lighterId} />
           <FollowShareDrawer lighterId={lighterId} />
+
+          <p className="pt-2 text-center text-xs leading-relaxed text-white/45">
+            Precise GPS is stored securely. Public location uses an approximate area (≤1km) and shows town when possible,
+            otherwise county.
+          </p>
         </div>
       </main>
     );
@@ -199,30 +196,24 @@ export default async function Page({ params }: PageProps) {
     .filter(Boolean) as { lat: number; lng: number }[];
 
   const center = points.length > 0 ? points[points.length - 1] : { lat: 51.7, lng: -8.5 };
-
   const distanceKm = typeof data?.distance_km === "number" ? data.distance_km : 0;
 
   return (
     <main className="min-h-screen bg-[#070716] text-white">
       <div className="mx-auto flex w-full max-w-md flex-col gap-4 px-4 py-10">
-        {/* Top card */}
         <div className="rounded-3xl border border-white/10 bg-white/5 p-5 shadow-[0_0_50px_rgba(140,90,255,0.12)]">
-          {/* Header row */}
           <div className="flex items-center gap-4">
             <img src="/logoo.png" alt="Lighter logo" className="h-14 w-14" />
-
             <div className="flex flex-col">
               <h1 className="text-[18px] font-semibold leading-tight whitespace-nowrap">
                 Where’s My Lighter?
               </h1>
-
               <p className="mt-0.5 text-[9px] leading-tight text-white/40 whitespace-nowrap">
                 Tracking this tiny flame across the globe
               </p>
             </div>
           </div>
 
-          {/* Content */}
           <div className="mt-5 flex items-center gap-4">
             <div className="grid h-12 w-12 place-items-center rounded-2xl bg-purple-500/20">
               <span className="text-xl">🌙</span>
@@ -230,45 +221,35 @@ export default async function Page({ params }: PageProps) {
 
             <div className="flex-1">
               <div className="text-xl font-semibold leading-tight">{label}</div>
-
               <div className="mt-1 text-xs text-white/50">
-                Last seen{" "}
-                {latest?.tapped_at ? new Date(latest.tapped_at).toLocaleString() : "—"}
+                Last seen {latest?.tapped_at ? new Date(latest.tapped_at).toLocaleString() : "—"}
               </div>
-
               <div className="mt-2 text-xs text-white/40">
-                Distance travelled{" "}
-                <span className="text-white/80">{distanceKm} km</span>
+                Distance travelled <span className="text-white/80">{distanceKm} km</span>
               </div>
             </div>
 
             <div className="text-right">
               <div className="text-4xl font-semibold leading-none">{data?.total_taps ?? 0}</div>
-              <div className="mt-1 text-[10px] tracking-[0.25em] text-white/50">
-                TOTAL TAPS
-              </div>
+              <div className="mt-1 text-[10px] tracking-[0.25em] text-white/50">TOTAL TAPS</div>
 
               <div className="mt-4 text-3xl font-semibold leading-none">
                 {data?.unique_holders ?? 0}
               </div>
-              <div className="mt-1 text-[10px] tracking-[0.25em] text-white/50">
-                OWNERS
-              </div>
+              <div className="mt-1 text-[10px] tracking-[0.25em] text-white/50">OWNERS</div>
             </div>
           </div>
         </div>
 
-        {/* Map */}
         <JourneyMap points={points} center={center} zoom={5} />
-
-        {/* Owners log */}
         <OwnersLog lighterId={lighterId} />
-
-        {/* Actions */}
         <TapActions lighterId={lighterId} />
-
-        {/* Follow/Share dropdown */}
         <FollowShareDrawer lighterId={lighterId} />
+
+        <p className="pt-2 text-center text-xs leading-relaxed text-white/45">
+          Precise GPS is stored securely. Public location uses an approximate area (≤1km) and shows town when possible,
+          otherwise county.
+        </p>
       </div>
     </main>
   );
