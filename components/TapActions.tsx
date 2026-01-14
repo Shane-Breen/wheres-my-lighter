@@ -2,19 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import FollowShareCard from "@/components/FollowShareCard";
 
-/**
- * Stable per-device visitor id so repeat taps don't become new "owners".
- * Stored locally. (If the user clears browser storage, it'll regenerate.)
- */
 function getOrCreateVisitorId(): string {
   if (typeof window === "undefined") return "server";
   const key = "wml_visitor_id";
-
   const existing = window.localStorage.getItem(key);
   if (existing && existing.length >= 12) return existing;
 
-  // Use crypto.randomUUID when available
   const id =
     typeof crypto !== "undefined" && "randomUUID" in crypto
       ? crypto.randomUUID()
@@ -31,13 +26,9 @@ async function reverseGeocode(lat: number, lng: number) {
         lat
       )}&lon=${encodeURIComponent(lng)}&zoom=10&addressdetails=1`;
 
-    const res = await fetch(url, {
-      headers: {
-        Accept: "application/json",
-      },
-    });
-
+    const res = await fetch(url, { headers: { Accept: "application/json" } });
     if (!res.ok) return { city: null, country: null };
+
     const data: any = await res.json();
     const addr = data?.address || {};
 
@@ -61,11 +52,8 @@ export default function TapActions({ lighterId }: { lighterId: string }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
-
-  // Name the user types (optional)
   const [displayName, setDisplayName] = useState("");
 
-  // Persist name too (nice UX)
   useEffect(() => {
     try {
       const saved = window.localStorage.getItem("wml_display_name");
@@ -110,8 +98,8 @@ export default function TapActions({ lighterId }: { lighterId: string }) {
         headers: { "Content-Type": "application/json" },
         cache: "no-store",
         body: JSON.stringify({
-          visitor_id,                 // ✅ stable owner id
-          display_name: displayName?.trim() || null, // ✅ optional name/alias
+          visitor_id,
+          display_name: displayName?.trim() || null,
           lat,
           lng,
           accuracy_m,
@@ -139,7 +127,6 @@ export default function TapActions({ lighterId }: { lighterId: string }) {
   }
 
   function goLighterProfile() {
-    // change if your route differs
     window.location.href = `/lighter/${encodeURIComponent(lighterId)}/avatar-preview`;
   }
 
@@ -151,7 +138,7 @@ export default function TapActions({ lighterId }: { lighterId: string }) {
         <input
           value={displayName}
           onChange={(e) => setDisplayName(e.target.value)}
-          placeholder="e.g. Shane Breen"
+          placeholder="e.g. Night Owl / Stevie / DJ_123"
           className="mt-3 w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/90 placeholder:text-white/40 outline-none"
           disabled={busy}
           maxLength={32}
@@ -161,7 +148,6 @@ export default function TapActions({ lighterId }: { lighterId: string }) {
         </p>
       </div>
 
-      {/* Buttons */}
       <button
         onClick={goLighterProfile}
         disabled={busy}
@@ -179,8 +165,8 @@ export default function TapActions({ lighterId }: { lighterId: string }) {
       </button>
 
       <p className="text-xs leading-relaxed text-white/50">
-        Precise GPS is stored securely. Public location uses an approximate area (≤1km)
-        and shows town when possible, otherwise county.
+        Precise GPS is stored securely. Public location uses an approximate area (≤1km) and shows town when possible,
+        otherwise county.
       </p>
 
       {msg ? (
@@ -188,6 +174,9 @@ export default function TapActions({ lighterId }: { lighterId: string }) {
           {msg}
         </div>
       ) : null}
+
+      {/* ✅ Combined “Follow + Share + Home Screen” card */}
+      <FollowShareCard lighterId={lighterId} />
     </div>
   );
 }
