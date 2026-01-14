@@ -20,10 +20,9 @@ function getOrCreateVisitorId(): string {
 
 async function reverseGeocode(lat: number, lng: number) {
   try {
-    const url =
-      `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(
-        lat
-      )}&lon=${encodeURIComponent(lng)}&zoom=10&addressdetails=1`;
+    const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(
+      lat
+    )}&lon=${encodeURIComponent(lng)}&zoom=10&addressdetails=1`;
 
     const res = await fetch(url, { headers: { Accept: "application/json" } });
     if (!res.ok) return { city: null, country: null };
@@ -33,7 +32,6 @@ async function reverseGeocode(lat: number, lng: number) {
 
     const city =
       addr.city || addr.town || addr.village || addr.hamlet || addr.county || null;
-
     const country = addr.country || null;
 
     return { city, country };
@@ -124,48 +122,49 @@ export default function TapActions({ lighterId }: { lighterId: string }) {
     window.location.href = `/lighter/${encodeURIComponent(lighterId)}/avatar-preview`;
   }
 
+  // Unified styles
+  const card =
+    "rounded-3xl border border-white/10 bg-white/5 p-4 shadow-[0_0_50px_rgba(140,90,255,0.10)]";
+  const purpleBtn =
+    "w-full rounded-2xl border border-white/10 bg-purple-500/20 px-4 py-4 text-base font-medium text-white hover:bg-purple-500/25 disabled:opacity-60";
+  const subtleMsg =
+    "rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/75";
+
   return (
     <div className="mt-4 space-y-3">
-      {/* Name card (uniform card styling) */}
-      <section className="rounded-3xl border border-white/10 bg-white/5 p-5 shadow-[0_0_50px_rgba(140,90,255,0.10)]">
+      {/* Name card */}
+      <div className={card}>
         <div className="text-xs tracking-[0.25em] text-white/60">YOUR NAME (OPTIONAL)</div>
-
         <input
           value={displayName}
           onChange={(e) => setDisplayName(e.target.value)}
           placeholder="e.g. Night Owl / Stevie / DJ_123"
-          className="mt-3 w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/90 placeholder:text-white/40 outline-none"
+          className="mt-3 w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-4 text-base text-white/90 placeholder:text-white/40 outline-none"
           disabled={busy}
           maxLength={32}
         />
-
         <p className="mt-2 text-xs leading-relaxed text-white/45">
           This name will appear in the Owners Log for your taps.
         </p>
+      </div>
 
-        {msg ? (
-          <div className="mt-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-xs text-white/80">
-            {msg}
-          </div>
-        ) : null}
-      </section>
+      {/* Actions: 1) Tap 2) Lighter Profile */}
+      <button onClick={tap} disabled={busy} className={purpleBtn}>
+        {busy ? "Logging tap…" : "Tap"}
+      </button>
 
-      {/* Buttons */}
-      <button
-        onClick={goLighterProfile}
-        disabled={busy}
-        className="w-full rounded-2xl border border-white/10 bg-white/10 px-4 py-4 text-base font-medium text-white hover:bg-white/15 disabled:opacity-60"
-      >
+      <button onClick={goLighterProfile} disabled={busy} className={purpleBtn}>
         Lighter Profile
       </button>
 
-      <button
-        onClick={tap}
-        disabled={busy}
-        className="w-full rounded-2xl border border-white/10 bg-purple-500/20 px-4 py-4 text-base font-medium text-white hover:bg-purple-500/25 disabled:opacity-60"
-      >
-        {busy ? "Logging tap…" : "Tap"}
-      </button>
+      {/* Status */}
+      {msg ? <div className={subtleMsg}>{msg}</div> : null}
+
+      {/* GPS disclaimer at the bottom for uniformity */}
+      <p className="pt-2 text-center text-xs leading-relaxed text-white/40">
+        Precise GPS is stored securely. Public location uses an approximate area (≤1km) and
+        shows town when possible, otherwise county.
+      </p>
     </div>
   );
 }
