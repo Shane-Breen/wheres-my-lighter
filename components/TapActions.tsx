@@ -32,12 +32,7 @@ async function reverseGeocode(lat: number, lng: number) {
     const addr = data?.address || {};
 
     const city =
-      addr.city ||
-      addr.town ||
-      addr.village ||
-      addr.hamlet ||
-      addr.county ||
-      null;
+      addr.city || addr.town || addr.village || addr.hamlet || addr.county || null;
 
     const country = addr.country || null;
 
@@ -131,9 +126,10 @@ export default function TapActions({ lighterId }: { lighterId: string }) {
 
   return (
     <div className="mt-4 space-y-3">
-      {/* Name input */}
-      <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
+      {/* Name card (uniform card styling) */}
+      <section className="rounded-3xl border border-white/10 bg-white/5 p-5 shadow-[0_0_50px_rgba(140,90,255,0.10)]">
         <div className="text-xs tracking-[0.25em] text-white/60">YOUR NAME (OPTIONAL)</div>
+
         <input
           value={displayName}
           onChange={(e) => setDisplayName(e.target.value)}
@@ -142,15 +138,23 @@ export default function TapActions({ lighterId }: { lighterId: string }) {
           disabled={busy}
           maxLength={32}
         />
+
         <p className="mt-2 text-xs leading-relaxed text-white/45">
           This name will appear in the Owners Log for your taps.
         </p>
-      </div>
 
+        {msg ? (
+          <div className="mt-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-xs text-white/80">
+            {msg}
+          </div>
+        ) : null}
+      </section>
+
+      {/* Buttons */}
       <button
         onClick={goLighterProfile}
         disabled={busy}
-        className="w-full rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-sm font-medium text-white hover:bg-white/15 disabled:opacity-60"
+        className="w-full rounded-2xl border border-white/10 bg-white/10 px-4 py-4 text-base font-medium text-white hover:bg-white/15 disabled:opacity-60"
       >
         Lighter Profile
       </button>
@@ -158,21 +162,10 @@ export default function TapActions({ lighterId }: { lighterId: string }) {
       <button
         onClick={tap}
         disabled={busy}
-        className="w-full rounded-2xl border border-white/10 bg-purple-500/20 px-4 py-3 text-sm font-medium text-white hover:bg-purple-500/25 disabled:opacity-60"
+        className="w-full rounded-2xl border border-white/10 bg-purple-500/20 px-4 py-4 text-base font-medium text-white hover:bg-purple-500/25 disabled:opacity-60"
       >
         {busy ? "Logging tap…" : "Tap"}
       </button>
-
-      <p className="text-xs leading-relaxed text-white/50">
-        Precise GPS is stored securely. Public location uses an approximate area (≤1km) and shows town when possible,
-        otherwise county.
-      </p>
-
-      {msg ? (
-        <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/80">
-          {msg}
-        </div>
-      ) : null}
     </div>
   );
 }
